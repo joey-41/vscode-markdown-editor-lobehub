@@ -8,7 +8,6 @@ import {
   INSERT_TABLE_COMMAND,
   INSERT_UNORDERED_LIST_COMMAND,
   ReactCodePlugin,
-  ReactCodemirrorPlugin,
   ReactHRPlugin,
   ReactImagePlugin,
   ReactLinkPlugin,
@@ -42,6 +41,7 @@ import markdownFileWhiteIcon from '../../file-white.png';
 import tocToggleIcon from '../../align-text-justify-svgrepo-com.svg';
 import InlineToolbar from './InlineToolbar';
 import { enEditorLocale, getEditorLocale } from './locale';
+import ReactMermaidCodemirrorPlugin from './MermaidCodemirrorPlugin';
 
 import './main.css';
 
@@ -730,6 +730,12 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       if (target?.closest('.editor-toc')) return;
       if (target?.closest('.editor-toc-toggle')) return;
       if (target?.closest('.editor-toc-hotspot')) return;
+      if (target?.closest('.mermaid-preview-panel')) return;
+      if (target?.closest('.mermaid-preview-canvas')) return;
+      if (target?.closest('.cm-header-toolbar')) return;
+      if (target?.closest('.cm-container')) return;
+      if (target?.closest('.cm-language-select')) return;
+      if (target?.closest('.cm-textarea')) return;
       if (window.getSelection()?.type === 'Range') return;
       editor.focus();
     },
@@ -853,7 +859,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
                   ReactLiteXmlPlugin,
                   ReactListPlugin,
                   ReactCodePlugin,
-                  ReactCodemirrorPlugin,
+                  ReactMermaidCodemirrorPlugin,
                   ReactHRPlugin,
                   Editor.withProps(ReactImagePlugin, {
                     defaultBlockImage: true,

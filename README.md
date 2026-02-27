@@ -23,6 +23,28 @@
 - 支持 Slash 命令（标题、列表、分割线、代码块、表格、TeX）
 - 支持目录（TOC）自动生成、折叠与定位
 - 支持图片上传到当前文档目录（通过扩展侧落盘）
+- 支持 Mermaid 代码块图表预览（仅 `mermaid` 代码块渲染图表，其他代码块保持原有行为）
+
+### Mermaid 支持（本次新增）
+
+- 当代码块语言为 `mermaid`（或 `mmd`）时，编辑器会在代码块下方显示流程图预览
+- Mermaid 代码块默认收起源码编辑区域，便于优先查看图表；可手动展开/收起
+- 非 Mermaid 代码块（如 `ts`、`js`、`python`）保持原有代码块交互，不会被自动收起
+- 点击 Mermaid 预览区域不会触发页面自动跳转
+
+示例：
+
+````markdown
+```mermaid
+flowchart TD
+    A["销管创建任务规则/模板"] --> B["系统根据模板\n批量生成任务实例"]
+    B --> C["任务分配给销售"]
+    C --> D["销售在销销乐APP\n查看任务"]
+    D --> E{"执行任务"}
+    E --> F["填写回复/反馈"]
+    F --> G["任务状态变更\n进行中→待完成→已完成→已逾期"]
+```
+````
 
 ### 技术栈
 
@@ -121,6 +143,28 @@ It provides a modern rich editing experience while keeping full file sync with V
 - Slash commands (headings, lists, divider, code block, table, TeX)
 - Auto-generated TOC with collapse and heading navigation
 - Image upload workflow handled by extension host
+- Mermaid code block preview (`mermaid` blocks are rendered as diagrams, other code blocks remain unchanged)
+
+### Mermaid Support (New)
+
+- Code blocks with language `mermaid` (or `mmd`) render a live diagram preview below the block
+- Mermaid code blocks are collapsed by default to prioritize diagram reading, and can still be toggled manually
+- Non-Mermaid code blocks (`ts`, `js`, `python`, etc.) keep their original behavior and are not auto-collapsed
+- Clicking the Mermaid preview does not trigger page auto-jump
+
+Example:
+
+````markdown
+```mermaid
+flowchart TD
+    A["Create task rule/template"] --> B["Generate task instances from template"]
+    B --> C["Assign tasks to sales reps"]
+    C --> D["Sales opens task in app"]
+    D --> E{"Execute task"}
+    E --> F["Submit feedback"]
+    F --> G["Status changes: in-progress → pending → done → overdue"]
+```
+````
 
 ### Stack
 
