@@ -3,7 +3,6 @@ media/dist
 node_modules
 media-src/node_modules
 *.vsix
-!lobehub-markdown-editor-*.vsix
 
 # local tools / IDE
 .claude
