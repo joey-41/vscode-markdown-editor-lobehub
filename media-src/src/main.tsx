@@ -811,6 +811,8 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
             <aside
               className={`editor-toc ${tocFloating ? 'editor-toc--floating' : 'editor-toc--docked'} ${tocExpanded ? 'is-open' : 'is-closed'}`}
               onClick={(event) => event.stopPropagation()}
+              onWheel={(event) => event.stopPropagation()}
+              onTouchMove={(event) => event.stopPropagation()}
               onMouseLeave={tocFloating ? closeTocForHover : undefined}
             >
               <nav className="editor-toc-list" role="navigation">

@@ -1,7 +1,7 @@
 {
   "name": "lobehub-markdown-editor-webview",
   "private": true,
-  "version": "0.0.35",
+  "version": "0.0.39",
   "scripts": {
     "build": "esbuild ./src/main.tsx --bundle --format=iife --platform=browser --sourcemap --minify --outfile=../media/dist/main.js --loader:.svg=file --loader:.png=file --loader:.jpg=file --loader:.jpeg=file --loader:.gif=file --loader:.webp=file --loader:.woff=file --loader:.woff2=file --loader:.ttf=file --define:process.env.NODE_ENV=\"'production'\""
   },

@@ -100,6 +100,7 @@ body {
   left: 10px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   gap: 6px;
   overflow: hidden;
   z-index: 6;
@@ -121,9 +122,9 @@ body {
 
 .editor-toc--docked {
   top: 52px;
-  bottom: 12px;
   width: 220px;
-  max-height: calc(100vh - 24px);
+  height: calc(100vh - 64px);
+  max-height: calc(100vh - 64px);
   padding: 4px 2px;
   border: 0;
   border-radius: 0;
@@ -137,8 +138,9 @@ body {
   bottom: auto;
   display: flex;
   flex-direction: column;
-  width: max-content;
-  max-width: min(268px, 62vw);
+  min-height: 0;
+  width: 220px;
+  max-width: min(220px, calc(100vw - 20px));
   max-height: min(72vh, 560px);
   padding: 8px 6px 8px 8px;
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
@@ -159,28 +161,29 @@ body {
 .editor-toc-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  flex: 1 1 auto;
   min-height: 0;
+  gap: 1px;
+  width: 100%;
   padding-right: 2px;
+  padding-bottom: 6px;
+  max-width: 100%;
+  max-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
-  overflow: auto;
-  max-width: 100%;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .editor-toc--floating .editor-toc-list {
-  width: min(264px, 64vw);
-  max-width: min(264px, 64vw);
-  max-height: none;
-}
-
-.editor-toc--docked .editor-toc-list {
-  flex: 1;
   width: 100%;
+  max-width: 100%;
 }
 
 .editor-toc-item {
+  display: block;
+  flex: 0 0 auto;
   width: 100%;
   max-width: 100%;
   padding: 7px 10px;
@@ -212,7 +215,8 @@ body {
 }
 
 .editor-toc--floating .editor-toc-item {
-  min-width: 148px;
+  max-width: 212px;
+  min-width: 0;
 }
 
 .editor-toc--docked .editor-toc-item {
@@ -491,14 +495,15 @@ body[data-theme='dark'] .editor-frame .editor_table_cell_selected {
 
   .editor-toc--docked {
     top: 44px;
-    bottom: 8px;
+    height: calc(100vh - 52px);
+    max-height: calc(100vh - 52px);
     width: 204px;
-    max-height: calc(100vh - 16px);
   }
 
   .editor-toc--floating {
     top: 44px;
-    max-width: min(238px, calc(100vw - 16px));
+    width: 204px;
+    max-width: min(204px, calc(100vw - 16px));
     max-height: min(70vh, calc(100vh - 56px));
   }
 
@@ -528,7 +533,8 @@ body[data-theme='dark'] .editor-frame .editor_table_cell_selected {
 
 @media (max-width: 760px) {
   .editor-toc--floating {
-    max-width: min(222px, calc(100vw - 14px));
+    width: min(204px, calc(100vw - 14px));
+    max-width: min(204px, calc(100vw - 14px));
   }
 
   .editor-toc-item {
