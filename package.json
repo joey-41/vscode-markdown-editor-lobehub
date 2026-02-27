@@ -2,7 +2,7 @@
   "name": "lobehub-markdown-editor",
   "displayName": "LobeHub Markdown Editor",
   "description": "LobeHub-style markdown custom editor for VS Code.",
-  "version": "0.0.43",
+  "version": "0.0.44",
   "publisher": "local",
   "private": true,
   "icon": "media/logo.png",
