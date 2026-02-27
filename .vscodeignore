@@ -1,0 +1,7 @@
+**/*
+!out/**
+!media/dist/**
+!media/logo.png
+!package.json
+!README.md
+!LICENSE

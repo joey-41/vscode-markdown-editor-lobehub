@@ -1,0 +1,23 @@
+{
+  "name": "lobehub-markdown-editor-webview",
+  "private": true,
+  "version": "0.0.35",
+  "scripts": {
+    "build": "esbuild ./src/main.tsx --bundle --format=iife --platform=browser --sourcemap --minify --outfile=../media/dist/main.js --loader:.svg=file --loader:.png=file --loader:.jpg=file --loader:.jpeg=file --loader:.gif=file --loader:.webp=file --loader:.woff=file --loader:.woff2=file --loader:.ttf=file --define:process.env.NODE_ENV=\"'production'\""
+  },
+  "dependencies": {
+    "@lobehub/editor": "^3.16.1",
+    "@lobehub/ui": "^4.11.5",
+    "antd": "^6.1.4",
+    "motion": "^12.24.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remark": "^15.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "esbuild": "^0.25.10",
+    "typescript": "^5.8.3"
+  }
+}

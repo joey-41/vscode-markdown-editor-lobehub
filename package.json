@@ -1,0 +1,99 @@
+{
+  "name": "lobehub-markdown-editor",
+  "displayName": "LobeHub Markdown Editor",
+  "description": "LobeHub-style markdown custom editor for VS Code.",
+  "version": "0.0.35",
+  "publisher": "local",
+  "private": true,
+  "icon": "media/logo.png",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:lobehub-markdown-editor.openEditor",
+    "onCustomEditor:lobehub-markdown-editor.customEditor"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "lobehub-markdown-editor.openEditor",
+        "title": "Open with LobeHub Markdown Editor",
+        "category": "LobeHub Markdown Editor"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .MD || resourceExtname == .MARKDOWN",
+          "command": "lobehub-markdown-editor.openEditor",
+          "group": "navigation"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .MD || resourceExtname == .MARKDOWN",
+          "command": "lobehub-markdown-editor.openEditor",
+          "group": "navigation"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "lobehub-markdown-editor.customEditor",
+        "displayName": "LobeHub Markdown Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.markdown"
+          },
+          {
+            "filenamePattern": "*.MD"
+          },
+          {
+            "filenamePattern": "*.MARKDOWN"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "configuration": {
+      "title": "LobeHub Markdown Editor",
+      "properties": {
+        "lobehub-markdown-editor.useVscodeThemeColor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use VS Code theme colors in webview editor."
+        },
+        "lobehub-markdown-editor.editorMaxWidth": {
+          "type": "number",
+          "default": 780,
+          "minimum": 560,
+          "maximum": 1200,
+          "description": "Content column max width in px."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run build:webview && npm run build:ext",
+    "build:ext": "tsc -p ./",
+    "build:webview": "npm --prefix ./media-src run build",
+    "watch:ext": "tsc -w -p ./",
+    "package": "npm run build && vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "2.31.1",
+    "@types/node": "^20.17.30",
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "cheerio": "1.0.0-rc.12"
+  }
+}
