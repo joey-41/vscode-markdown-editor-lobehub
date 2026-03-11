@@ -2,9 +2,14 @@
   "name": "lobehub-markdown-editor",
   "displayName": "LobeHub Markdown Editor",
   "description": "LobeHub-style markdown custom editor for VS Code.",
-  "version": "0.0.44",
-  "publisher": "local",
+  "version": "0.0.46",
+  "publisher": "joey-41",
+  "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joey-41/vscode-markdown-editor-lobehub.git"
+  },
   "icon": "media/logo.png",
   "engines": {
     "vscode": "^1.96.0"
@@ -85,7 +90,8 @@
     "build:ext": "tsc -p ./",
     "build:webview": "npm --prefix ./media-src run build",
     "watch:ext": "tsc -w -p ./",
-    "package": "npm run build && vsce package"
+    "package": "npm run build && vsce package",
+    "publish:openvsx": "npx ovsx publish"
   },
   "devDependencies": {
     "@vscode/vsce": "2.31.1",

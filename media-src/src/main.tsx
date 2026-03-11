@@ -20,6 +20,17 @@ import {
 } from '@lobehub/editor';
 import { Editor, EditorProvider, useEditor, useEditorState } from '@lobehub/editor/react';
 import { ConfigProvider, Text, ThemeProvider } from '@lobehub/ui';
+import { $isTableNode, $isTableRowNode, setScrollableTablesActive } from '@lexical/table';
+import {
+  $getNodeByKey,
+  $getRoot,
+  $isElementNode,
+  HISTORIC_TAG,
+  HISTORY_MERGE_TAG,
+  REDO_COMMAND,
+  SELECT_ALL_COMMAND,
+  UNDO_COMMAND,
+} from 'lexical';
 import {
   Heading1Icon,
   Heading2Icon,
@@ -162,6 +173,196 @@ const isSameToc = (a: TocItem[], b: TocItem[]) => {
   return true;
 };
 
+interface TableDimensionsSnapshot {
+  colWidths?: number[];
+  rowHeights: Record<string, number | undefined>;
+  structureSignature: string;
+}
+
+const CODEMIRROR_SELECTOR = '.cm-container, .cm-textarea, .cm-language-select, .CodeMirror';
+
+const readSelectedCodeMirrorText = (target: HTMLElement | null) => {
+  const nativeSelection = window.getSelection()?.toString();
+  if (nativeSelection) return nativeSelection;
+
+  const codeMirrorElement = target?.closest(CODEMIRROR_SELECTOR) as
+    | (HTMLElement & { CodeMirror?: { getSelection?: () => string } })
+    | null;
+  const codeMirrorInstance = codeMirrorElement?.CodeMirror;
+  const codeMirrorSelection = codeMirrorInstance?.getSelection?.();
+  if (codeMirrorSelection) return codeMirrorSelection;
+
+  const activeElement = document.activeElement;
+  const candidates = [
+    activeElement instanceof HTMLTextAreaElement ? activeElement : null,
+    ...(target ? Array.from(target.closest(CODEMIRROR_SELECTOR)?.querySelectorAll('textarea') ?? []) : []),
+  ];
+
+  for (const textarea of candidates) {
+    if (!(textarea instanceof HTMLTextAreaElement)) continue;
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+    if (end > start) {
+      return textarea.value.slice(start, end);
+    }
+  }
+
+  return null;
+};
+
+const copyTextToClipboard = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    textarea.style.inset = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    try {
+      return document.execCommand('copy');
+    } finally {
+      textarea.remove();
+    }
+  }
+};
+
+
+const escapeSelectorValue = (value: string) => {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value);
+  }
+
+  return value.replace(/(["\\#.;?+*~':!^$\[\]()=>|/@])/g, '\\$1');
+};
+
+const findHashTarget = (href: string) => {
+  const rawHash = href.startsWith('#') ? href.slice(1) : href;
+  if (!rawHash) return null;
+
+  const decodedHash = decodeURIComponent(rawHash);
+  const candidates = Array.from(
+    new Set([rawHash, decodedHash, createHeadingAnchorValue(rawHash), createHeadingAnchorValue(decodedHash)]),
+  ).filter(Boolean);
+  for (const candidate of candidates) {
+    const byId = document.getElementById(candidate);
+    if (byId) return byId;
+
+    const selector = '[name="' + escapeSelectorValue(candidate) + '"]';
+    const byName = document.querySelector<HTMLElement>(selector);
+    if (byName) return byName;
+  }
+
+  return null;
+};
+
+const navigateToHash = (href: string) => {
+  const target = findHashTarget(href);
+  if (!target) return false;
+
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  if (typeof history !== 'undefined') {
+    history.replaceState(null, '', href);
+  }
+
+  return true;
+};
+
+
+const createHeadingAnchorValue = (text: string) =>
+  text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}\s-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const createHeadingAnchorId = (text: string, counts: Map<string, number>) => {
+  const base = createHeadingAnchorValue(text) || 'section';
+  const nextCount = counts.get(base) ?? 0;
+  counts.set(base, nextCount + 1);
+  return nextCount === 0 ? base : base + '-' + nextCount;
+};
+
+const cloneTableDimensionsSnapshot = (
+  snapshot: TableDimensionsSnapshot,
+): TableDimensionsSnapshot => ({
+  colWidths: snapshot.colWidths ? [...snapshot.colWidths] : undefined,
+  rowHeights: { ...snapshot.rowHeights },
+  structureSignature: snapshot.structureSignature,
+});
+
+const areNumberArraysEqual = (a?: number[], b?: number[]) => {
+  if (!a && !b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) return false;
+  }
+
+  return true;
+};
+
+const areRowHeightsEqual = (
+  a: Record<string, number | undefined>,
+  b: Record<string, number | undefined>,
+) => {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    if (!(key in b)) return false;
+    if (a[key] !== b[key]) return false;
+  }
+
+  return true;
+};
+
+const hasTableDimensionsDifference = (a: TableDimensionsSnapshot, b: TableDimensionsSnapshot) =>
+  a.structureSignature !== b.structureSignature ||
+  !areNumberArraysEqual(a.colWidths, b.colWidths) ||
+  !areRowHeightsEqual(a.rowHeights, b.rowHeights);
+
+const getTableStructureSignature = (tableNode: { getChildren: () => any[]; getColumnCount: () => number }) => {
+  const rows = tableNode.getChildren().filter($isTableRowNode);
+  return `${tableNode.getColumnCount()}:${rows.length}:${rows.map((row) => row.getChildren().length).join(',')}`;
+};
+
+const collectTableDimensionsSnapshots = () => {
+  const snapshots = new Map<string, TableDimensionsSnapshot>();
+
+  const visit = (node: any) => {
+    if ($isTableNode(node)) {
+      const rows = node.getChildren().filter($isTableRowNode);
+      const rowHeights = Object.fromEntries(rows.map((row) => [row.getKey(), row.getHeight()]));
+
+      snapshots.set(node.getKey(), {
+        colWidths: node.getColWidths() ? [...node.getColWidths()!] : undefined,
+        rowHeights,
+        structureSignature: getTableStructureSignature(node),
+      });
+      return;
+    }
+
+    if (!$isElementNode(node)) return;
+    node.getChildren().forEach(visit);
+  };
+
+  visit($getRoot());
+  return snapshots;
+};
+
 const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   const editor = useEditor();
   const editorState = useEditorState(editor);
@@ -192,6 +393,9 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   const uploadResolversRef = useRef(
     new Map<string, { reject: (reason?: unknown) => void; resolve: (value: { url: string }) => void }>(),
   );
+  const cachedTableDimensionsRef = useRef(new Map<string, TableDimensionsSnapshot>());
+  const lastObservedTableDimensionsRef = useRef(new Map<string, TableDimensionsSnapshot>());
+  const isRestoringTableDimensionsRef = useRef(false);
 
   const updateTocFromDom = useCallback(() => {
     const headingNodes = Array.from(
@@ -208,9 +412,12 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       })
       .filter((item) => Boolean(item.text));
 
+    const headingAnchorCounts = new Map<string, number>();
     const nextItems: TocItem[] = extracted.map((item, index) => {
       const id = `toc-heading-${index}`;
+      const anchorId = createHeadingAnchorId(item.text, headingAnchorCounts);
       item.node.dataset.tocId = id;
+      item.node.id = anchorId;
       return {
         depth: Math.max(0, item.level - 1),
         id,
@@ -223,6 +430,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       const text = node.textContent?.trim() ?? '';
       if (text) return;
       delete node.dataset.tocId;
+      node.removeAttribute('id');
     });
 
     if (nextItems.length > 0) {
@@ -531,9 +739,76 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     if (!lexicalEditor) return;
 
     let previousContent = JSON.stringify(editor.getDocument('text'));
+    lastObservedTableDimensionsRef.current = lexicalEditor.getEditorState().read(() => collectTableDimensionsSnapshots());
 
-    const unregister = lexicalEditor.registerUpdateListener(({ dirtyElements, dirtyLeaves }) => {
+    const unregister = lexicalEditor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState, tags }) => {
       if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
+
+      let currentTableSnapshots = new Map<string, TableDimensionsSnapshot>();
+      editorState.read(() => {
+        currentTableSnapshots = collectTableDimensionsSnapshots();
+      });
+
+      const isHistoricUpdate = tags.has(HISTORIC_TAG);
+      const cachedTableDimensions = cachedTableDimensionsRef.current;
+      const previousTableSnapshots = lastObservedTableDimensionsRef.current;
+
+      if (isRestoringTableDimensionsRef.current) {
+        isRestoringTableDimensionsRef.current = false;
+      } else if (!applyingRemoteRef.current) {
+        if (isHistoricUpdate) {
+          const tablesToRestore = Array.from(cachedTableDimensions.entries()).filter(([tableKey, cachedSnapshot]) => {
+            const current = currentTableSnapshots.get(tableKey);
+            if (!current) return false;
+            if (current.structureSignature !== cachedSnapshot.structureSignature) return false;
+
+            return hasTableDimensionsDifference(current, cachedSnapshot);
+          });
+
+          if (tablesToRestore.length > 0) {
+            isRestoringTableDimensionsRef.current = true;
+            queueMicrotask(() => {
+              lexicalEditor.update(
+                () => {
+                  for (const [tableKey, cachedSnapshot] of tablesToRestore) {
+                    const tableNode = $getNodeByKey(tableKey);
+                    if (!$isTableNode(tableNode)) continue;
+                    if (getTableStructureSignature(tableNode) !== cachedSnapshot.structureSignature) continue;
+
+                    tableNode.setColWidths(cachedSnapshot.colWidths ? [...cachedSnapshot.colWidths] : undefined);
+
+                    for (const row of tableNode.getChildren().filter($isTableRowNode)) {
+                      row.setHeight(cachedSnapshot.rowHeights[row.getKey()]);
+                    }
+                  }
+                },
+                { tag: HISTORY_MERGE_TAG },
+              );
+            });
+          }
+        } else {
+          for (const tableKey of cachedTableDimensions.keys()) {
+            if (!currentTableSnapshots.has(tableKey)) {
+              cachedTableDimensions.delete(tableKey);
+            }
+          }
+
+          for (const [tableKey, current] of currentTableSnapshots) {
+            const previous = previousTableSnapshots.get(tableKey);
+            const cachedSnapshot = cachedTableDimensions.get(tableKey);
+
+            if (cachedSnapshot && cachedSnapshot.structureSignature !== current.structureSignature) {
+              cachedTableDimensions.delete(tableKey);
+            }
+
+            if (previous && hasTableDimensionsDifference(previous, current)) {
+              cachedTableDimensions.set(tableKey, cloneTableDimensionsSnapshot(current));
+            }
+          }
+        }
+      }
+
+      lastObservedTableDimensionsRef.current = currentTableSnapshots;
 
       const currentContent = JSON.stringify(editor.getDocument('text'));
       if (currentContent === previousContent) return;
@@ -684,16 +959,69 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const isSave = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's';
-      if (!isSave) return;
+      const hasPrimaryModifier = event.metaKey || event.ctrlKey;
+      if (!hasPrimaryModifier) return;
 
-      event.preventDefault();
-      handleSave();
+      const key = event.key.toLowerCase();
+      const isSave = key === 's';
+      if (isSave) {
+        event.preventDefault();
+        handleSave();
+        return;
+      }
+
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const isInEditorArea = Boolean(target?.closest(".editor-frame [data-lexical-editor='true']"));
+      const isInCodeMirror = Boolean(target?.closest(CODEMIRROR_SELECTOR));
+      if (isInCodeMirror) {
+        return;
+      }
+
+      if (!isInEditorArea) return;
+
+      const lexicalEditor = editor.getLexicalEditor?.();
+      if (!lexicalEditor) return;
+
+      const isSelectAll = key === 'a';
+      if (isSelectAll) {
+        event.preventDefault();
+        lexicalEditor.dispatchCommand(SELECT_ALL_COMMAND, event);
+        return;
+      }
+
+      const isUndo = key === 'z' && !event.shiftKey;
+      const isRedo = key === 'y' || (key === 'z' && event.shiftKey);
+      if (isUndo || isRedo) {
+        event.preventDefault();
+        lexicalEditor.dispatchCommand(isUndo ? UNDO_COMMAND : REDO_COMMAND, undefined);
+      }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSave]);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [editor, handleSave]);
+
+  useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const isInCodeMirror = Boolean(target?.closest(CODEMIRROR_SELECTOR));
+      if (!isInCodeMirror) return;
+
+      const selectedText = readSelectedCodeMirrorText(target);
+      if (!selectedText) return;
+
+      if (event.clipboardData) {
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', selectedText);
+        return;
+      }
+
+      void copyTextToClipboard(selectedText);
+    };
+
+    document.addEventListener('copy', handleCopy, true);
+    return () => document.removeEventListener('copy', handleCopy, true);
+  }, []);
 
   useEffect(() => {
     const clickHandler = (event: MouseEvent) => {
@@ -701,12 +1029,18 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       if (!target) return;
 
       const anchor = target.closest('a') as HTMLAnchorElement | null;
-      if (!anchor?.getAttribute('href')) return;
+      const href = anchor?.getAttribute('href')?.trim();
+      if (!href) return;
+
+      if (href.startsWith('#') && navigateToHash(href)) {
+        event.preventDefault();
+        return;
+      }
 
       event.preventDefault();
       vscode.postMessage({
         command: 'open-link',
-        href: anchor.getAttribute('href'),
+        href,
       });
     };
 
@@ -736,6 +1070,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       if (target?.closest('.cm-container')) return;
       if (target?.closest('.cm-language-select')) return;
       if (target?.closest('.cm-textarea')) return;
+      if (target?.closest(".editor-frame [data-lexical-editor='true']")) return;
       if (window.getSelection()?.type === 'Range') return;
       editor.focus();
     },
@@ -883,6 +1218,10 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
                 onInit={(instance) => {
                   readyRef.current = true;
                   patchEditorTranslation(instance);
+                  const lexicalEditor = instance.getLexicalEditor?.();
+                  if (lexicalEditor) {
+                    setScrollableTablesActive(lexicalEditor, false);
+                  }
 
                   const pendingContent = pendingRemoteContentRef.current;
                   if (typeof pendingContent === 'string') {

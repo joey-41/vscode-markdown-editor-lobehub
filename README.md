@@ -1,6 +1,6 @@
 # LobeHub Markdown Editor (VS Code)
 
-![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)
+![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions\&logoColor=white)
 
 [中文](#中文说明) | [English](#english)
 
@@ -10,8 +10,7 @@
 
 ### 项目简介
 
-`LobeHub Markdown Editor` 是一个基于 `@lobehub/editor` 构建的 VS Code 自定义 Markdown 编辑器扩展。  
-目标是提供比默认纯文本编辑更接近现代富文本体验的 Markdown 编写方式，同时保持与 VS Code 文件系统的实时同步。
+`LobeHub Markdown Editor` 是一个基于 `@lobehub/editor` 构建的 VS Code 自定义 Markdown 编辑器扩展。 目标是提供比默认纯文本编辑更接近现代富文本体验的 Markdown 编写方式，同时保持与 VS Code 文件系统的实时同步。
 
 ### 主要特性
 
@@ -29,9 +28,8 @@
 
 - 当代码块语言为 `mermaid`（或 `mmd`）时，编辑器会在代码块下方显示流程图预览
 - Mermaid 代码块默认收起源码编辑区域，便于优先查看图表；可手动展开/收起
-- 非 Mermaid 代码块（如 `ts`、`js`、`python`）保持原有代码块交互，不会被自动收起
+- 非 Mermaid 代码块（如 `ts`、 `js`、 `python`）保持原有代码块交互，不会被自动收起
 - 点击 Mermaid 预览区域不会触发页面自动跳转
-
 
 ### 技术栈
 
@@ -43,7 +41,7 @@
 
 ### 项目结构
 
-```text
+```latex
 .
 ├─ src/                    # VS Code 扩展后端（Host）
 ├─ media-src/              # Webview 前端源码（React）
@@ -65,10 +63,10 @@
 }
 ```
 
-| 配置项 | 类型 | 默认值 | 说明 |
-|---|---|---:|---|
+| 配置项                                           | 类型        | 默认值    | 说明                     |
+| :-------------------------------------------- | :-------- | :----- | :--------------------- |
 | `lobehub-markdown-editor.useVscodeThemeColor` | `boolean` | `true` | 是否使用 VS Code 主题颜色映射编辑器 |
-| `lobehub-markdown-editor.editorMaxWidth` | `number` | `780` | 编辑内容区最大宽度（px） |
+| `lobehub-markdown-editor.editorMaxWidth`      | `number`  | `780`  | 编辑内容区最大宽度（px）          |
 
 ### 本地开发
 
@@ -94,7 +92,7 @@ npx vsce package
 
 产物示例：
 
-```text
+```latex
 lobehub-markdown-editor-0.0.xx.vsix
 ```
 
@@ -117,8 +115,7 @@ lobehub-markdown-editor-0.0.xx.vsix
 
 ### Overview
 
-`LobeHub Markdown Editor` is a VS Code custom Markdown editor extension built on top of `@lobehub/editor`.  
-It provides a modern rich editing experience while keeping full file sync with VS Code.
+`LobeHub Markdown Editor` is a VS Code custom Markdown editor extension built on top of `@lobehub/editor`. It provides a modern rich editing experience while keeping full file sync with VS Code.
 
 ### Features
 
@@ -130,20 +127,18 @@ It provides a modern rich editing experience while keeping full file sync with V
 - Slash commands (headings, lists, divider, code block, table, TeX)
 - Auto-generated TOC with collapse and heading navigation
 - Image upload workflow handled by extension host
-- Mermaid code block preview (`mermaid` blocks are rendered as diagrams, other code blocks remain unchanged)
+- Mermaid code block preview ( `mermaid` blocks are rendered as diagrams, other code blocks remain unchanged)
 
 ### Mermaid Support
 
 - Code blocks with language `mermaid` (or `mmd`) render a live diagram preview below the block
 - Mermaid code blocks are collapsed by default to prioritize diagram reading, and can still be toggled manually
-- Non-Mermaid code blocks (`ts`, `js`, `python`, etc.) keep their original behavior and are not auto-collapsed
+- Non-Mermaid code blocks ( `ts`, `js`, `python`, etc.) keep their original behavior and are not auto-collapsed
 - Clicking the Mermaid preview does not trigger page auto-jump
-
-
 
 ### Stack
 
-- VS Code Extension API (`CustomTextEditorProvider`)
+- VS Code Extension API ( `CustomTextEditorProvider`)
 - React + TypeScript (Webview app)
 - `@lobehub/editor`, `@lobehub/ui`
 - `esbuild` for Webview bundling
