@@ -19,7 +19,7 @@ import {
   type IEditor,
 } from '@lobehub/editor';
 import { Editor, EditorProvider, useEditor, useEditorState } from '@lobehub/editor/react';
-import { ConfigProvider, Text, ThemeProvider } from '@lobehub/ui';
+import { ConfigProvider, Text as LobeText, ThemeProvider } from '@lobehub/ui';
 import { $isTableNode, $isTableRowNode, setScrollableTablesActive } from '@lexical/table';
 import {
   $getNodeByKey,
@@ -32,24 +32,28 @@ import {
   UNDO_COMMAND,
 } from 'lexical';
 import {
+  ChevronDownIcon,
+  ChevronUpIcon,
   Heading1Icon,
   Heading2Icon,
   Heading3Icon,
   ListIcon,
   ListOrderedIcon,
+  SearchIcon,
   ListTodoIcon,
   MinusIcon,
   SigmaIcon,
   SquareDashedBottomCodeIcon,
   Table2Icon,
+  XIcon,
 } from 'lucide-react';
 import * as motion from 'motion/react-m';
-import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import markdownFileIcon from '../../file.png';
-import markdownFileWhiteIcon from '../../file-white.png';
-import tocToggleIcon from '../../align-text-justify-svgrepo-com.svg';
+import markdownFileIcon from './assets/file.png';
+import markdownFileWhiteIcon from './assets/file-white.png';
+import tocToggleIcon from './assets/align-text-justify-svgrepo-com.svg';
 import InlineToolbar from './InlineToolbar';
 import { enEditorLocale, getEditorLocale } from './locale';
 import ReactMermaidCodemirrorPlugin from './MermaidCodemirrorPlugin';
@@ -179,7 +183,33 @@ interface TableDimensionsSnapshot {
   structureSignature: string;
 }
 
+interface SearchTextSegment {
+  end: number;
+  node: Text;
+  start: number;
+}
+
+interface TextSearchMatch {
+  range: Range;
+  scopeElement: HTMLElement;
+}
+
+interface TextSearchResult {
+  limitReached: boolean;
+  matches: TextSearchMatch[];
+}
+
+interface SearchHighlightRegistry {
+  delete: (name: string) => void;
+  set: (name: string, value: unknown) => void;
+}
+
 const CODEMIRROR_SELECTOR = '.cm-container, .cm-textarea, .cm-language-select, .CodeMirror';
+const EDITOR_ROOT_SELECTOR = ".editor-frame [data-lexical-editor='true']";
+const SEARCH_SCOPE_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, pre, .cm-content, .cm-line';
+const SEARCH_HIGHLIGHT_NAME = 'editor-search-match';
+const SEARCH_HIGHLIGHT_ACTIVE_NAME = 'editor-search-current';
+const SEARCH_MATCH_LIMIT = 1000;
 
 const readSelectedCodeMirrorText = (target: HTMLElement | null) => {
   const nativeSelection = window.getSelection()?.toString();
@@ -208,6 +238,16 @@ const readSelectedCodeMirrorText = (target: HTMLElement | null) => {
   }
 
   return null;
+};
+
+const getSearchSeedFromTarget = (target: HTMLElement | null) => {
+  const selectedText = readSelectedCodeMirrorText(target) ?? window.getSelection()?.toString() ?? '';
+  const normalized = selectedText.replace(/\s+/g, ' ').trim();
+  if (!normalized || normalized.length > 200) {
+    return undefined;
+  }
+
+  return normalized;
 };
 
 const copyTextToClipboard = async (text: string) => {
@@ -260,6 +300,177 @@ const findHashTarget = (href: string) => {
   }
 
   return null;
+};
+
+const getEditorRootElement = () => document.querySelector<HTMLElement>(EDITOR_ROOT_SELECTOR);
+
+const clearSearchHighlights = () => {
+  const highlightRegistry = (
+    globalThis as typeof globalThis & {
+      CSS?: { highlights?: SearchHighlightRegistry };
+    }
+  ).CSS?.highlights;
+
+  highlightRegistry?.delete(SEARCH_HIGHLIGHT_NAME);
+  highlightRegistry?.delete(SEARCH_HIGHLIGHT_ACTIVE_NAME);
+};
+
+const applySearchHighlights = (matches: TextSearchMatch[], activeIndex: number) => {
+  clearSearchHighlights();
+
+  const HighlightCtor = (window as Window & {
+    Highlight?: new (...ranges: Range[]) => unknown;
+  }).Highlight;
+  const highlightRegistry = (
+    globalThis as typeof globalThis & {
+      CSS?: { highlights?: SearchHighlightRegistry };
+    }
+  ).CSS?.highlights;
+
+  if (!HighlightCtor || !highlightRegistry || matches.length === 0) {
+    return false;
+  }
+
+  highlightRegistry.set(
+    SEARCH_HIGHLIGHT_NAME,
+    new HighlightCtor(...matches.map((item) => item.range.cloneRange())),
+  );
+
+  const activeMatch = matches[activeIndex];
+  if (activeMatch) {
+    highlightRegistry.set(SEARCH_HIGHLIGHT_ACTIVE_NAME, new HighlightCtor(activeMatch.range.cloneRange()));
+  }
+
+  return true;
+};
+
+const getSearchScopeElement = (textNode: Text, root: HTMLElement) => {
+  const parentElement = textNode.parentElement;
+  if (!parentElement) return root;
+
+  const scopedElement = parentElement.closest<HTMLElement>(SEARCH_SCOPE_SELECTOR);
+  if (scopedElement && root.contains(scopedElement)) {
+    return scopedElement;
+  }
+
+  let candidate = parentElement;
+  while (candidate.parentElement && candidate.parentElement !== root && root.contains(candidate.parentElement)) {
+    candidate = candidate.parentElement;
+  }
+
+  return candidate;
+};
+
+const findSearchSegmentIndex = (segments: SearchTextSegment[], offset: number) => {
+  for (let index = 0; index < segments.length; index += 1) {
+    if (offset < segments[index].end) {
+      return index;
+    }
+  }
+
+  return Math.max(segments.length - 1, 0);
+};
+
+const createSearchRangeFromOffsets = (
+  segments: SearchTextSegment[],
+  startOffset: number,
+  endOffset: number,
+) => {
+  const startSegment = segments[findSearchSegmentIndex(segments, startOffset)];
+  const endSegment = segments[findSearchSegmentIndex(segments, Math.max(startOffset, endOffset - 1))];
+  const range = document.createRange();
+
+  range.setStart(startSegment.node, startOffset - startSegment.start);
+  range.setEnd(endSegment.node, endOffset - endSegment.start);
+
+  return range;
+};
+
+const collectTextSearchResults = (root: HTMLElement, rawQuery: string): TextSearchResult => {
+  const query = rawQuery.trim().toLocaleLowerCase();
+  if (!query) {
+    return { limitReached: false, matches: [] };
+  }
+
+  const scopes = new Map<HTMLElement, { segments: SearchTextSegment[]; text: string }>();
+  const walker = document.createTreeWalker(
+    root,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: (node) => {
+        if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
+        if (!node.data) return NodeFilter.FILTER_REJECT;
+
+        const parentElement = node.parentElement;
+        if (!parentElement) return NodeFilter.FILTER_REJECT;
+        if (parentElement.closest('[aria-hidden="true"]')) return NodeFilter.FILTER_REJECT;
+        if (parentElement.closest('.cm-header-toolbar, .cm-language-select, .lobe-float-toolbar')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    },
+  );
+
+  while (walker.nextNode()) {
+    const textNode = walker.currentNode as Text;
+    const scopeElement = getSearchScopeElement(textNode, root);
+    const bucket = scopes.get(scopeElement) ?? { segments: [], text: '' };
+    const start = bucket.text.length;
+
+    bucket.text += textNode.data;
+    bucket.segments.push({
+      end: bucket.text.length,
+      node: textNode,
+      start,
+    });
+    scopes.set(scopeElement, bucket);
+  }
+
+  const matches: TextSearchMatch[] = [];
+  let limitReached = false;
+
+  for (const [scopeElement, bucket] of scopes) {
+    if (!bucket.text) continue;
+
+    const haystack = bucket.text.toLocaleLowerCase();
+    let fromIndex = 0;
+
+    while (matches.length < SEARCH_MATCH_LIMIT) {
+      const matchIndex = haystack.indexOf(query, fromIndex);
+      if (matchIndex === -1) break;
+
+      matches.push({
+        range: createSearchRangeFromOffsets(bucket.segments, matchIndex, matchIndex + query.length),
+        scopeElement,
+      });
+      fromIndex = matchIndex + Math.max(1, query.length);
+    }
+
+    if (matches.length >= SEARCH_MATCH_LIMIT) {
+      limitReached = true;
+      break;
+    }
+  }
+
+  return { limitReached, matches };
+};
+
+const revealSearchMatch = (match: TextSearchMatch, behavior: ScrollBehavior = 'smooth') => {
+  const rect = match.range.getBoundingClientRect();
+  const topThreshold = 88;
+  const bottomThreshold = window.innerHeight - 40;
+
+  if (rect.height > 0 && rect.top >= topThreshold && rect.bottom <= bottomThreshold) {
+    return;
+  }
+
+  match.scopeElement.scrollIntoView({
+    behavior,
+    block: 'center',
+    inline: 'nearest',
+  });
 };
 
 const navigateToHash = (href: string) => {
@@ -377,6 +588,13 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   const [tocCollapsed, setTocCollapsed] = useState<boolean>(true);
   const [viewportWidth, setViewportWidth] = useState<number>(() => window.innerWidth);
   const [activeTocId, setActiveTocId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const [searchActiveIndex, setSearchActiveIndex] = useState(0);
+  const [searchLimitReached, setSearchLimitReached] = useState(false);
+  const [searchRefreshVersion, setSearchRefreshVersion] = useState(0);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const titleText = useMemo(() => {
     const name = fileName?.trim() || 'Untitled';
     const stripped = name.replace(/\.(md|markdown)$/i, '');
@@ -390,12 +608,89 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   const pendingRemoteContentRef = useRef<string | null>(null);
   const tocRafRef = useRef<number | undefined>(undefined);
   const activeTocRafRef = useRef<number | undefined>(undefined);
+  const searchRefreshRafRef = useRef<number | undefined>(undefined);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchMatchesRef = useRef<TextSearchMatch[]>([]);
+  const searchOpenRef = useRef(false);
+  const searchQueryRef = useRef('');
   const uploadResolversRef = useRef(
     new Map<string, { reject: (reason?: unknown) => void; resolve: (value: { url: string }) => void }>(),
   );
   const cachedTableDimensionsRef = useRef(new Map<string, TableDimensionsSnapshot>());
   const lastObservedTableDimensionsRef = useRef(new Map<string, TableDimensionsSnapshot>());
   const isRestoringTableDimensionsRef = useRef(false);
+  const normalizedSearchQuery = deferredSearchQuery.trim();
+
+  const scheduleSearchRefresh = useCallback(() => {
+    if (!searchOpenRef.current || !searchQueryRef.current.trim()) {
+      return;
+    }
+
+    if (searchRefreshRafRef.current !== undefined) {
+      window.cancelAnimationFrame(searchRefreshRafRef.current);
+    }
+
+    searchRefreshRafRef.current = window.requestAnimationFrame(() => {
+      setSearchRefreshVersion((previous) => previous + 1);
+      searchRefreshRafRef.current = undefined;
+    });
+  }, []);
+
+  const focusSearchInput = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    });
+  }, []);
+
+  const openSearch = useCallback(
+    (seedQuery?: string) => {
+      const nextQuery = seedQuery?.trim();
+      setSearchOpen(true);
+      if (nextQuery) {
+        setSearchQuery(nextQuery);
+      }
+      focusSearchInput();
+    },
+    [focusSearchInput],
+  );
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    clearSearchHighlights();
+  }, []);
+
+  const jumpToSearchMatch = useCallback((direction: 1 | -1) => {
+    setSearchActiveIndex((previous) => {
+      if (searchMatchCount <= 0) return 0;
+      const next = previous + direction;
+      if (next < 0) return searchMatchCount - 1;
+      if (next >= searchMatchCount) return 0;
+      return next;
+    });
+  }, [searchMatchCount]);
+
+  const focusEditorWithoutScrolling = useCallback(() => {
+    const previousScrollX = window.scrollX;
+    const previousScrollY = window.scrollY;
+
+    window.requestAnimationFrame(() => {
+      const editorRoot = getEditorRootElement();
+
+      if (editorRoot) {
+        try {
+          editorRoot.focus({ preventScroll: true });
+        } catch {
+          editorRoot.focus();
+          window.scrollTo(previousScrollX, previousScrollY);
+        }
+        return;
+      }
+
+      editor.focus();
+      window.scrollTo(previousScrollX, previousScrollY);
+    });
+  }, [editor]);
 
   const updateTocFromDom = useCallback(() => {
     const headingNodes = Array.from(
@@ -519,6 +814,70 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     });
   }, [scheduleActiveTocSync, updateTocFromDom]);
 
+  useEffect(() => {
+    searchOpenRef.current = searchOpen;
+  }, [searchOpen]);
+
+  useEffect(() => {
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setSearchActiveIndex(0);
+  }, [normalizedSearchQuery]);
+
+  useEffect(() => {
+    if (!searchOpen) {
+      searchMatchesRef.current = [];
+      setSearchMatchCount(0);
+      setSearchLimitReached(false);
+      clearSearchHighlights();
+      return;
+    }
+
+    if (!normalizedSearchQuery) {
+      searchMatchesRef.current = [];
+      setSearchMatchCount(0);
+      setSearchLimitReached(false);
+      clearSearchHighlights();
+      return;
+    }
+
+    const editorRoot = getEditorRootElement();
+    if (!editorRoot) {
+      searchMatchesRef.current = [];
+      setSearchMatchCount(0);
+      setSearchLimitReached(false);
+      clearSearchHighlights();
+      return;
+    }
+
+    const { limitReached, matches } = collectTextSearchResults(editorRoot, normalizedSearchQuery);
+    searchMatchesRef.current = matches;
+    setSearchMatchCount(matches.length);
+    setSearchLimitReached(limitReached);
+    setSearchActiveIndex((previous) => (matches.length === 0 ? 0 : Math.min(previous, matches.length - 1)));
+  }, [normalizedSearchQuery, searchOpen, searchRefreshVersion]);
+
+  useEffect(() => {
+    if (!searchOpen || !normalizedSearchQuery) {
+      clearSearchHighlights();
+      return;
+    }
+
+    const matches = searchMatchesRef.current;
+    if (matches.length === 0) {
+      clearSearchHighlights();
+      return;
+    }
+
+    applySearchHighlights(matches, searchActiveIndex);
+    const activeMatch = matches[searchActiveIndex];
+    if (activeMatch) {
+      revealSearchMatch(activeMatch, 'smooth');
+    }
+  }, [normalizedSearchQuery, searchActiveIndex, searchMatchCount, searchOpen]);
+
   const patchEditorTranslation = useCallback(
     (instance: IEditor) => {
       const originalT = instance.t?.bind(instance);
@@ -553,8 +912,9 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
 
       lastSyncedMarkdownRef.current = markdown;
       scheduleTocSync();
+      scheduleSearchRefresh();
     },
-    [editor, scheduleTocSync],
+    [editor, scheduleSearchRefresh, scheduleTocSync],
   );
 
   const syncToHost = useCallback(() => {
@@ -721,9 +1081,9 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       return {
         ...current,
         extra: (
-          <Text code fontSize={12} type={'secondary'}>
+          <LobeText code fontSize={12} type={'secondary'}>
             {current.key}
-          </Text>
+          </LobeText>
         ),
         style: {
           minWidth: 220,
@@ -816,10 +1176,11 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
 
       syncToHost();
       scheduleTocSync();
+      scheduleSearchRefresh();
     });
 
     return () => unregister();
-  }, [editor, patchEditorTranslation, scheduleTocSync, syncToHost]);
+  }, [editor, patchEditorTranslation, scheduleSearchRefresh, scheduleTocSync, syncToHost]);
 
   useEffect(() => {
     return () => {
@@ -829,6 +1190,10 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       if (activeTocRafRef.current !== undefined) {
         window.cancelAnimationFrame(activeTocRafRef.current);
       }
+      if (searchRefreshRafRef.current !== undefined) {
+        window.cancelAnimationFrame(searchRefreshRafRef.current);
+      }
+      clearSearchHighlights();
     };
   }, []);
 
@@ -959,10 +1324,39 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const key = event.key.toLowerCase();
       const hasPrimaryModifier = event.metaKey || event.ctrlKey;
+      const isInCodeMirror = Boolean(target?.closest(CODEMIRROR_SELECTOR));
+      const isInEditorArea = Boolean(target?.closest(EDITOR_ROOT_SELECTOR));
+      const hasSearchQuery = Boolean(searchQueryRef.current.trim());
+      const canNavigateSearch = searchOpenRef.current && hasSearchQuery;
+
+      if (hasPrimaryModifier && key === 'f') {
+        event.preventDefault();
+        openSearch(target?.closest('.editor-search') ? undefined : getSearchSeedFromTarget(target));
+        return;
+      }
+
+      if ((hasPrimaryModifier && key === 'g') || (key === 'f3' && canNavigateSearch)) {
+        if (!canNavigateSearch) return;
+        event.preventDefault();
+        jumpToSearchMatch(event.shiftKey ? -1 : 1);
+        return;
+      }
+
+      if (key === 'escape' && searchOpenRef.current && !target?.closest('.editor-search')) {
+        if (isInCodeMirror) {
+          return;
+        }
+
+        event.preventDefault();
+        closeSearch();
+        return;
+      }
+
       if (!hasPrimaryModifier) return;
 
-      const key = event.key.toLowerCase();
       const isSave = key === 's';
       if (isSave) {
         event.preventDefault();
@@ -970,9 +1364,6 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
         return;
       }
 
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      const isInEditorArea = Boolean(target?.closest(".editor-frame [data-lexical-editor='true']"));
-      const isInCodeMirror = Boolean(target?.closest(CODEMIRROR_SELECTOR));
       if (isInCodeMirror) {
         return;
       }
@@ -999,7 +1390,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [editor, handleSave]);
+  }, [closeSearch, editor, handleSave, jumpToSearchMatch, openSearch]);
 
   useEffect(() => {
     const handleCopy = (event: ClipboardEvent) => {
@@ -1024,6 +1415,32 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   }, []);
 
   useEffect(() => {
+    const nativeWindowOpen = window.open.bind(window);
+
+    window.open = ((url?: string | URL, target?: string, features?: string) => {
+      if (!url) {
+        return nativeWindowOpen(url as string | URL, target, features);
+      }
+
+      const href = String(url).trim();
+      if (!href || /^(about:blank|javascript:)/i.test(href)) {
+        return nativeWindowOpen(url as string | URL, target, features);
+      }
+
+      vscode.postMessage({
+        command: 'open-link',
+        href,
+      });
+
+      return null;
+    }) as typeof window.open;
+
+    return () => {
+      window.open = nativeWindowOpen;
+    };
+  }, []);
+
+  useEffect(() => {
     const clickHandler = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
@@ -1034,19 +1451,23 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
 
       if (href.startsWith('#') && navigateToHash(href)) {
         event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
         return;
       }
 
       event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
       vscode.postMessage({
         command: 'open-link',
         href,
       });
     };
 
-    document.addEventListener('click', clickHandler);
+    document.addEventListener('click', clickHandler, true);
     return () => {
-      document.removeEventListener('click', clickHandler);
+      document.removeEventListener('click', clickHandler, true);
     };
   }, []);
 
@@ -1056,6 +1477,19 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     [theme],
   );
   const tocToggleIconSrc = useMemo(() => resolveWebviewAssetUrl(tocToggleIcon), []);
+  const searchHasResults = searchMatchCount > 0;
+  const searchResultLabel = useMemo(() => {
+    if (!normalizedSearchQuery) {
+      return locale['search.idle'] || 'Type to search';
+    }
+
+    if (searchMatchCount === 0) {
+      return locale['search.noResults'] || 'No results';
+    }
+
+    const totalLabel = searchLimitReached ? `${searchMatchCount}+` : String(searchMatchCount);
+    return `${Math.min(searchActiveIndex + 1, searchMatchCount)}/${totalLabel}`;
+  }, [locale, normalizedSearchQuery, searchActiveIndex, searchLimitReached, searchMatchCount]);
 
   const handleMainClick = useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
@@ -1146,6 +1580,75 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
               <span aria-hidden="true" className="editor-toc-toggle-icon" />
             </button>
           </>
+        )}
+        {searchOpen && (
+          <div
+            className="editor-search"
+            role="search"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <span aria-hidden="true" className="editor-search-icon">
+              <SearchIcon size={15} strokeWidth={1.9} />
+            </span>
+            <input
+              ref={searchInputRef}
+              aria-label={locale['search.placeholder'] || 'Find in document'}
+              className="editor-search-input"
+              placeholder={locale['search.placeholder'] || 'Find in document'}
+              spellCheck={false}
+              type="text"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  jumpToSearchMatch(event.shiftKey ? -1 : 1);
+                  return;
+                }
+
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  closeSearch();
+                  focusEditorWithoutScrolling();
+                }
+              }}
+            />
+            <span className={`editor-search-count ${searchHasResults ? '' : 'is-empty'}`}>
+              {searchResultLabel}
+            </span>
+            <button
+              aria-label={locale['search.previous'] || 'Previous result'}
+              className="editor-search-action"
+              disabled={!searchHasResults}
+              type="button"
+              onClick={() => jumpToSearchMatch(-1)}
+            >
+              <ChevronUpIcon size={16} strokeWidth={1.9} />
+            </button>
+            <button
+              aria-label={locale['search.next'] || 'Next result'}
+              className="editor-search-action"
+              disabled={!searchHasResults}
+              type="button"
+              onClick={() => jumpToSearchMatch(1)}
+            >
+              <ChevronDownIcon size={16} strokeWidth={1.9} />
+            </button>
+            <button
+              aria-label={locale['search.close'] || 'Close search'}
+              className="editor-search-action"
+              type="button"
+              onClick={() => {
+                closeSearch();
+                focusEditorWithoutScrolling();
+              }}
+            >
+              <XIcon size={16} strokeWidth={1.9} />
+            </button>
+          </div>
         )}
         <div className="editor-layout">
           {showToc && (

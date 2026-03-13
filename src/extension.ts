@@ -83,6 +83,98 @@ function normalizeContentForDocument(content: string, document: vscode.TextDocum
   return eol === '\n' ? normalizedLf : normalizedLf.replace(/\n/g, '\r\n');
 }
 
+function isWindowsAbsolutePath(value: string) {
+  return /^[a-zA-Z]:[\\/]/.test(value);
+}
+
+function decodeUriComponentSafely(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeLocalFilePath(value: string) {
+  const decoded = decodeUriComponentSafely(value);
+  if (process.platform !== 'win32') {
+    return decoded;
+  }
+
+  return decoded.replace(/^\/([a-zA-Z]:[\\/])/, '$1').replace(/\//g, '\\');
+}
+
+function tryResolveWebviewBackedFileUri(href: string): vscode.Uri | undefined {
+  try {
+    const parsed = new URL(href);
+    const hostname = parsed.hostname.toLowerCase();
+    const isWebviewBackedFile =
+      parsed.protocol === 'https:' &&
+      hostname.includes('vscode-resource') &&
+      hostname.endsWith('vscode-cdn.net');
+
+    if (!isWebviewBackedFile) {
+      return undefined;
+    }
+
+    return vscode.Uri.file(normalizeLocalFilePath(parsed.pathname)).with({
+      fragment: parsed.hash ? decodeUriComponentSafely(parsed.hash.slice(1)) : '',
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function tryResolveLinkedFileUri(documentUri: vscode.Uri, href: string): vscode.Uri | undefined {
+  const trimmed = href.trim();
+  if (!trimmed || trimmed.startsWith('#')) {
+    return undefined;
+  }
+
+  const webviewBackedUri = tryResolveWebviewBackedFileUri(trimmed);
+  if (webviewBackedUri) {
+    return webviewBackedUri;
+  }
+
+  if (/^file:/i.test(trimmed)) {
+    const parsed = vscode.Uri.parse(trimmed);
+    return vscode.Uri.file(parsed.fsPath).with({ fragment: parsed.fragment });
+  }
+
+  if (/^vscode-(file|resource):/i.test(trimmed)) {
+    const parsed = vscode.Uri.parse(trimmed);
+    return vscode.Uri.file(normalizeLocalFilePath(parsed.path)).with({ fragment: parsed.fragment });
+  }
+
+  const hasUriScheme = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed);
+  if (hasUriScheme && !isWindowsAbsolutePath(trimmed)) {
+    return undefined;
+  }
+
+  const hashIndex = trimmed.indexOf('#');
+  const pathPart = hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed;
+  const fragment = hashIndex >= 0 ? decodeUriComponentSafely(trimmed.slice(hashIndex + 1)) : '';
+  const normalizedPath = normalizeLocalFilePath(pathPart.split('?')[0]);
+  const absolutePath = path.isAbsolute(normalizedPath)
+    ? normalizedPath
+    : path.resolve(path.dirname(documentUri.fsPath), normalizedPath);
+
+  return vscode.Uri.file(absolutePath).with({ fragment });
+}
+
+async function openLinkedUri(targetUri: vscode.Uri) {
+  if (isMarkdownUri(targetUri)) {
+    await vscode.commands.executeCommand('vscode.openWith', targetUri, VIEW_TYPE, {
+      preview: false,
+    });
+    return;
+  }
+
+  await vscode.commands.executeCommand('vscode.open', targetUri, {
+    preview: false,
+  });
+}
+
 function inferImageExtension(fileName?: string, mimeType?: string): string {
   const extFromName = (fileName && path.extname(fileName)) || '';
   if (extFromName) return extFromName.toLowerCase();
@@ -343,13 +435,19 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
               return;
             }
 
-            if (/^https?:\/\//i.test(href)) {
-              await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(href));
+            const linkedFileUri = tryResolveLinkedFileUri(document.uri, href);
+            if (linkedFileUri) {
+              await openLinkedUri(linkedFileUri);
               return;
             }
 
-            const absolutePath = path.resolve(path.dirname(document.uri.fsPath), href);
-            await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(absolutePath));
+            if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/i.test(href) && !isWindowsAbsolutePath(href)) {
+              await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(href), {
+                preview: false,
+              });
+              return;
+            }
+
             break;
           }
           case 'upload-image': {
