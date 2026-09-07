@@ -1,7 +1,13 @@
 **/*
-!out/**
-!media/dist/**
+!out/extension.js
+!media/dist/main.js
+!media/dist/main.css
+!media/dist/*.png
+!media/dist/*.svg
 !media/logo.png
 !package.json
 !README.md
 !LICENSE
+**/*.map
+out/**/*.map
+media/dist/**/*.map

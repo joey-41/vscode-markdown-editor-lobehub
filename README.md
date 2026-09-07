@@ -1,60 +1,168 @@
-# LobeHub Markdown Editor (VS Code)
+<p align="center">
+  <img src="./media/logo.png" alt="LobeHub Markdown Editor Logo" width="128" height="128" />
+</p>
 
-![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions\&logoColor=white)
+# LobeHub Markdown Editor for VS Code
 
-[中文](#中文说明) | [English](#english)
+<p align="center">
+  <a href="https://open-vsx.org/extension/joey-41/lobehub-markdown-editor">
+    <img src="https://img.shields.io/open-vsx/v/joey-41/lobehub-markdown-editor?color=blue&label=Open%20VSX" alt="Open VSX Version" />
+  </a>
+  <a href="https://open-vsx.org/extension/joey-41/lobehub-markdown-editor">
+    <img src="https://img.shields.io/open-vsx/dt/joey-41/lobehub-markdown-editor?color=green&label=Downloads" alt="Open VSX Downloads" />
+  </a>
+  <a href="https://github.com/joey-41/vscode-markdown-editor-lobehub/blob/main/LICENSE.txt">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="#-中文说明">中文说明</a> | <a href="#-english">English</a>
+</p>
 
 ---
 
-## 中文说明
+## 📖 中文说明
 
-### 项目简介
+### 💡 产品简介
 
-`LobeHub Markdown Editor` 是一个基于 `@lobehub/editor` 构建的 VS Code 自定义 Markdown 编辑器扩展。 目标是提供比默认纯文本编辑更接近现代富文本体验的 Markdown 编写方式，同时保持与 VS Code 文件系统的实时同步。
+**LobeHub Markdown Editor** 是一款专为 VS Code 打造的现代富文本风格 Markdown 可视化编辑器。
 
-### 主要特性
+告别传统 Markdown 左右分屏对照预览的割裂体验，LobeHub Markdown Editor 将类 Notion 的沉浸式所见即所得（WYSIWYG）体验带入 VS Code。无论是撰写技术文档、个人笔记还是产品方案，都能享受到流畅、优雅且直观的排版创作体验，同时与 VS Code 本地文件保持原生双向同步。
 
-- 支持 `Open With` 打开 `.md` / `.markdown` 文件
-- 支持 VS Code Custom Editor（Webview）与文本文件双向同步
-- 支持 `Cmd/Ctrl + S` 保存
-- 支持深色/浅色主题，并可映射 VS Code 主题颜色
-- 支持浮动工具栏（加粗、斜体、列表、引用、链接、代码、公式等）
-- 支持 Slash 命令（标题、列表、分割线、代码块、表格、TeX）
-- 支持目录（TOC）自动生成、折叠与定位
-- 支持图片上传到当前文档目录（通过扩展侧落盘）
-- 支持 Mermaid 代码块图表预览（仅 `mermaid` 代码块渲染图表，其他代码块保持原有行为）
+---
 
-### Mermaid 支持
+### 🛒 市场下载与安装
 
-- 当代码块语言为 `mermaid`（或 `mmd`）时，编辑器会在代码块下方显示流程图预览
-- Mermaid 代码块默认收起源码编辑区域，便于优先查看图表；可手动展开/收起
-- 非 Mermaid 代码块（如 `ts`、 `js`、 `python`）保持原有代码块交互，不会被自动收起
-- 点击 Mermaid 预览区域不会触发页面自动跳转
+- **Open VSX 插件市场**：[https://open-vsx.org/extension/joey-41/lobehub-markdown-editor](https://open-vsx.org/extension/joey-41/lobehub-markdown-editor)
+- **VS Code / Cursor / VSCodium 内一键安装**：
+  在扩展市场搜索框输入 `LobeHub Markdown Editor` 或 `joey-41`，点击 **Install** 即可。
+- **离线 VSIX 安装**：
+  在 Release 页面下载最新 `.vsix` 文件，在 VS Code 扩展面板右上角点击 `...` -> 选择 `Install from VSIX...` 完成安装。
 
-### 技术栈
+---
 
-- VS Code Extension API（CustomTextEditorProvider）
-- React + TypeScript（Webview UI）
-- `@lobehub/editor` + `@lobehub/ui`
-- `esbuild`（Webview 打包）
-- `tsc`（Extension Host 编译）
+### ✨ 核心功能与产品特色
 
-### 项目结构
+- 🖋️ **现代所见即所得排版**
+  - **斜杠命令（Slash `/`）**：按下 `/` 即可快捷唤出所有块级元素（各级标题、无序/有序列表、任务清单、引用、分割线、代码块、表格、数学公式等）。
+  - **气泡浮动工具栏**：选中文字即刻唤出高阶排版气泡（加粗、斜体、下划线、删除线、行内代码、超链接、文字高亮）。
+  - **富文本表格可视化编辑**：支持单元格选中、行列快速增删与键盘方向键导航，告别手写 Markdown 语法对齐的繁琐。
 
-```latex
-.
-├─ src/                    # VS Code 扩展后端（Host）
-├─ media-src/              # Webview 前端源码（React）
-│  └─ src/
-├─ media/dist/             # Webview 构建产物（打包后生成）
-├─ media/                  # 扩展静态资源（logo 等）
-├─ package.json            # 扩展 manifest + 脚本
-└─ README.md
+- 📊 **交互式 Mermaid 图表引擎**
+  - 代码块语言声明为 `mermaid`（或 `mmd`）时，实时在下方渲染流程图、时序图、架构图等。
+  - **无级缩放与平移**：提供工具栏缩放按钮（20% ~ 400%）、`Ctrl/Cmd + 鼠标滚轮` 平滑缩放，以及鼠标左键抓取平移（Pan），超大复杂图表局部细节清晰可见。
+  - **独立全屏沉浸模式**：一键切换至全屏视口沉浸式查看大型架构图，按 `Esc` 轻松退出。
+  - **默认折叠源码**：优先呈现高清图表视图，整洁不遮挡，需要时可随时手动展开编辑源码。
+
+- ⚡ **原生级双向数据同步**
+  - 完美契合 VS Code `Custom Editor` 规范，编辑内容与底层 `.md` 文件实时同步。
+  - 完整支持快捷键 `Cmd/Ctrl + S` 随手保存，防止意外丢失。
+  - 随时可在可视化富文本编辑器与 VS Code 原生纯文本编辑器之间无缝切换。
+
+- 📑 **智能目录（TOC）与长文导航**
+  - 根据文档标题层级自动生成导航目录树。
+  - 支持多级展开/折叠与精准锚点点击跳转，长篇大作浏览定位更轻松。
+
+- 🖼️ **本地图片直接粘贴与无缝落盘**
+  - 截图后可直接粘贴（`Ctrl/Cmd + V`）至文档中。
+  - 自动将图片安全落盘至当前文档所在目录或媒体目录，并在 Markdown 中自动引用相对路径。
+
+- 🎨 **深度自适应 VS Code 原生主题**
+  - 深度适配 VS Code 浅色（Light）、深色（Dark）及高对比度主题。
+  - 自适应融入当前编辑器的背景底色、文字颜色与边框样式，原生感十足。
+
+---
+
+### 🚀 快速上手
+
+1. **打开文件**：
+   在资源管理器中右键任意 `.md` 或 `.markdown` 文件，选择 **「打开方式... (Open With)」** -> 选择 **「LobeHub Markdown Editor」**。
+2. **设为默认打开方式（推荐）**：
+   在「打开方式...」弹窗中点击「配置默认编辑器」，选择 **LobeHub Markdown Editor**，后续双击 Markdown 文件将直接进入所见即所得富文本模式。
+3. **切换回纯文本模式**：
+   随时点击编辑器右上角的「...」或右键标签页选择「使用...打开」->「文本编辑器 (Text Editor)」即可切回代码视图。
+
+---
+
+### ⚙️ 个性化配置
+
+在 VS Code `settings.json` 中支持以下个性化配置：
+
+```json
+{
+  // 是否自动使用 VS Code 当前主题颜色（推荐开启，视觉浑然一体）
+  "lobehub-markdown-editor.useVscodeThemeColor": true,
+
+  // 编辑器正文区域的最大宽度限制（px），默认 780，支持 560 ~ 1200
+  "lobehub-markdown-editor.editorMaxWidth": 780
+}
 ```
 
-### 配置项
+---
 
-在 VS Code `settings.json` 中配置：
+## 🌐 English
+
+### 💡 Overview
+
+**LobeHub Markdown Editor** is a modern, Notion-like WYSIWYG Markdown visual editor designed for VS Code.
+
+Say goodbye to split-pane preview fatigue. LobeHub Markdown Editor brings an elegant, visual, and distraction-free writing experience directly into VS Code, while maintaining native, millisecond-level two-way synchronization with your local Markdown files.
+
+---
+
+### 🛒 Download & Installation
+
+- **Open VSX Registry**: [https://open-vsx.org/extension/joey-41/lobehub-markdown-editor](https://open-vsx.org/extension/joey-41/lobehub-markdown-editor)
+- **In VS Code / Cursor / VSCodium**:
+  Search for `LobeHub Markdown Editor` or `joey-41` in the Extensions marketplace and click **Install**.
+- **Manual VSIX Installation**:
+  Download the latest `.vsix` package from Releases, open the Extensions view in VS Code, click `...` -> select `Install from VSIX...`.
+
+---
+
+### ✨ Key Features
+
+- 🖋️ **Modern WYSIWYG Editing**
+  - **Slash Commands (`/`)**: Type `/` to insert any block element instantly (headings, lists, task lists, quotes, dividers, code blocks, tables, math formulas).
+  - **Floating Bubble Toolbar**: Select text to format (bold, italic, strikethrough, underline, inline code, link, highlight).
+  - **Interactive Rich Tables**: Visual cell selection, row/column operations, and arrow-key navigation without tedious manual alignment.
+
+- 📊 **Interactive Mermaid Diagram Viewer**
+  - Live preview for any code block with language `mermaid` or `mmd`.
+  - **Interactive Zoom & Pan**: Toolbar zoom buttons (20% – 400%), `Ctrl/Cmd + Wheel` smooth zooming, and drag-to-pan support for inspecting complex charts.
+  - **Fullscreen Mode**: Inspect intricate architecture diagrams in an expansive fullscreen overlay (press `Esc` to exit).
+  - **Collapsed by Default**: Code is tucked away by default to prioritize diagrams, while remaining editable on demand.
+
+- ⚡ **Seamless Two-Way Document Sync**
+  - Native integration with VS Code's `CustomTextEditorProvider`.
+  - Full support for `Cmd/Ctrl + S` saving.
+  - Effortlessly toggle between visual editor and plain text editor anytime.
+
+- 📑 **Smart Table of Contents (TOC)**
+  - Auto-generated hierarchical navigation based on heading levels.
+  - Supports expand/collapse and instant jump navigation for long-form writing.
+
+- 🖼️ **Image Paste & Local Management**
+  - Paste images directly from clipboard (`Ctrl/Cmd + V`).
+  - Automatically saves images to your workspace directory and links them via relative paths.
+
+- 🎨 **Adaptive VS Code Theme Integration**
+  - Harmonious integration with VS Code dark, light, and high-contrast color themes.
+
+---
+
+### 🚀 Getting Started
+
+1. Right-click any `.md` or `.markdown` file in the Explorer.
+2. Select **Open With...** -> **LobeHub Markdown Editor**.
+3. (Optional) Select **Configure default editor for '*.md'** to open Markdown files in LobeHub by default.
+
+---
+
+### ⚙️ Settings
+
+Customize in VS Code `settings.json`:
 
 ```json
 {
@@ -62,130 +170,9 @@
   "lobehub-markdown-editor.editorMaxWidth": 780
 }
 ```
-
-| 配置项                                           | 类型        | 默认值    | 说明                     |
-| :-------------------------------------------- | :-------- | :----- | :--------------------- |
-| `lobehub-markdown-editor.useVscodeThemeColor` | `boolean` | `true` | 是否使用 VS Code 主题颜色映射编辑器 |
-| `lobehub-markdown-editor.editorMaxWidth`      | `number`  | `780`  | 编辑内容区最大宽度（px）          |
-
-### 本地开发
-
-```bash
-# 1) 安装扩展 Host 依赖
-npm install
-
-# 2) 安装 Webview 依赖
-npm --prefix ./media-src install
-
-# 3) 构建（Webview + Extension）
-npm run build
-```
-
-然后在 VS Code 打开本项目，按 `F5` 启动 `Extension Development Host` 调试。
-
-### 打包发布（VSIX）
-
-```bash
-npm run build
-npx vsce package
-```
-
-产物示例：
-
-```latex
-lobehub-markdown-editor-0.0.xx.vsix
-```
-
-安装方式：
-
-1. 打开 VS Code 扩展面板
-2. 点击右上角 `...`
-3. 选择 `Install from VSIX...`
-4. 选择生成的 `.vsix`
-
-### 使用方式
-
-1. 打开任意 `.md` 或 `.markdown` 文件
-2. 在文件标签页或资源管理器右键
-3. 选择 `Open with LobeHub Markdown Editor`
-
----
-
-## English
-
-### Overview
-
-`LobeHub Markdown Editor` is a VS Code custom Markdown editor extension built on top of `@lobehub/editor`. It provides a modern rich editing experience while keeping full file sync with VS Code.
-
-### Features
-
-- Open `.md` / `.markdown` files via `Open With`
-- Custom Editor (Webview) with two-way sync to text documents
-- `Cmd/Ctrl + S` save support
-- Light/Dark mode support with optional VS Code theme color mapping
-- Floating toolbar (bold, italic, list, quote, link, code, formula, etc.)
-- Slash commands (headings, lists, divider, code block, table, TeX)
-- Auto-generated TOC with collapse and heading navigation
-- Image upload workflow handled by extension host
-- Mermaid code block preview ( `mermaid` blocks are rendered as diagrams, other code blocks remain unchanged)
-
-### Mermaid Support
-
-- Code blocks with language `mermaid` (or `mmd`) render a live diagram preview below the block
-- Mermaid code blocks are collapsed by default to prioritize diagram reading, and can still be toggled manually
-- Non-Mermaid code blocks ( `ts`, `js`, `python`, etc.) keep their original behavior and are not auto-collapsed
-- Clicking the Mermaid preview does not trigger page auto-jump
-
-### Stack
-
-- VS Code Extension API ( `CustomTextEditorProvider`)
-- React + TypeScript (Webview app)
-- `@lobehub/editor`, `@lobehub/ui`
-- `esbuild` for Webview bundling
-- `tsc` for extension host build
-
-### Configuration
-
-Use in VS Code `settings.json`:
-
-```json
-{
-  "lobehub-markdown-editor.useVscodeThemeColor": true,
-  "lobehub-markdown-editor.editorMaxWidth": 780
-}
-```
-
-### Development
-
-```bash
-# Install extension-host dependencies
-npm install
-
-# Install webview dependencies
-npm --prefix ./media-src install
-
-# Build all
-npm run build
-```
-
-Open this project in VS Code, then press `F5` to launch an Extension Development Host.
-
-### Package as VSIX
-
-```bash
-npm run build
-npx vsce package
-```
-
-Install:
-
-1. Open Extensions panel in VS Code
-2. Click `...`
-3. Choose `Install from VSIX...`
-4. Select the generated `.vsix` file
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE.txt)

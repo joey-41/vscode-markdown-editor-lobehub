@@ -10,7 +10,6 @@ import {
   ReactCodePlugin,
   ReactHRPlugin,
   ReactImagePlugin,
-  ReactLinkPlugin,
   ReactListPlugin,
   ReactLiteXmlPlugin,
   ReactMathPlugin,
@@ -54,6 +53,7 @@ import { createRoot } from 'react-dom/client';
 import markdownFileIcon from './assets/file.png';
 import markdownFileWhiteIcon from './assets/file-white.png';
 import tocToggleIcon from './assets/align-text-justify-svgrepo-com.svg';
+import CustomLinkPlugin from './CustomLinkPlugin';
 import InlineToolbar from './InlineToolbar';
 import { enEditorLocale, getEditorLocale } from './locale';
 import ReactMermaidCodemirrorPlugin from './MermaidCodemirrorPlugin';
@@ -878,12 +878,14 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     }
   }, [normalizedSearchQuery, searchActiveIndex, searchMatchCount, searchOpen]);
 
+  const syncTimerRef = useRef<any>(undefined);
+
   const patchEditorTranslation = useCallback(
     (instance: IEditor) => {
       const originalT = instance.t?.bind(instance);
 
       instance.t = ((key: string, params?: Record<string, unknown>) => {
-        const raw = locale[key] ?? enEditorLocale[key] ?? originalT?.(key) ?? key;
+        const raw = locale[key] ?? enEditorLocale[key] ?? (originalT as any)?.(key) ?? key;
         if (typeof raw !== 'string') return key;
         return safeTemplate(raw, params);
       }) as IEditor['t'];
@@ -917,7 +919,12 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     [editor, scheduleSearchRefresh, scheduleTocSync],
   );
 
-  const syncToHost = useCallback(() => {
+  const syncToHostImmediate = useCallback(() => {
+    if (syncTimerRef.current !== undefined) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = undefined;
+    }
+
     if (applyingRemoteRef.current) {
       return;
     }
@@ -939,7 +946,27 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     });
   }, [editor]);
 
+  const syncToHost = useCallback(() => {
+    if (applyingRemoteRef.current || !hasUserInteractionRef.current) {
+      return;
+    }
+
+    if (syncTimerRef.current !== undefined) {
+      clearTimeout(syncTimerRef.current);
+    }
+
+    syncTimerRef.current = setTimeout(() => {
+      syncToHostImmediate();
+      syncTimerRef.current = undefined;
+    }, 280);
+  }, [syncToHostImmediate]);
+
   const handleSave = useCallback(() => {
+    if (syncTimerRef.current !== undefined) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = undefined;
+    }
+
     const markdown = String(editor.getDocument('markdown') ?? '');
     lastSyncedMarkdownRef.current = markdown;
 
@@ -1072,7 +1099,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       if ('type' in item && item.type === 'divider') return item;
 
       const current = item as {
-        icon: React.ComponentType<any>;
+        icon: any;
         key: string;
         label: string;
         onSelect: (currentEditor: IEditor) => void;
@@ -1089,7 +1116,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
           minWidth: 220,
         },
       };
-    });
+    }) as any;
   }, [locale]);
 
   useEffect(() => {
@@ -1703,7 +1730,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
                     defaultBlockImage: true,
                     handleUpload: handleImageUpload,
                   }),
-                  ReactLinkPlugin,
+                  CustomLinkPlugin,
                   ReactTablePlugin,
                   ReactMathPlugin,
                   Editor.withProps(ReactToolbarPlugin, {

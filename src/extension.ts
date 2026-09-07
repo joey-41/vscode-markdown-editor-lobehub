@@ -1,4 +1,3 @@
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 
@@ -10,6 +9,7 @@ interface WebviewInitPayload {
   type: 'init' | 'update';
   content: string;
   theme: 'light' | 'dark';
+  revision?: number;
   options?: {
     editorMaxWidth: number;
     useVscodeThemeColor: boolean;
@@ -53,7 +53,7 @@ function getNonce() {
 }
 
 function isMarkdownUri(uri: vscode.Uri) {
-  return /\.(md|markdown)$/i.test(uri.fsPath);
+  return /\.(md|markdown)$/i.test(uri.path);
 }
 
 function showError(message: string) {
@@ -62,10 +62,10 @@ function showError(message: string) {
 
 function getRelativePath(uri: vscode.Uri): string {
   const folder = vscode.workspace.getWorkspaceFolder(uri);
-  if (!folder) return uri.fsPath;
+  if (!folder) return uri.fsPath || uri.path;
 
   const relative = path.relative(folder.uri.fsPath, uri.fsPath);
-  return relative || path.basename(uri.fsPath);
+  return relative || path.basename(uri.fsPath || uri.path);
 }
 
 function getConfig() {
@@ -108,17 +108,22 @@ function tryResolveWebviewBackedFileUri(href: string): vscode.Uri | undefined {
   try {
     const parsed = new URL(href);
     const hostname = parsed.hostname.toLowerCase();
-    const isWebviewBackedFile =
+    const isWebviewCdn =
       parsed.protocol === 'https:' &&
       hostname.includes('vscode-resource') &&
       hostname.endsWith('vscode-cdn.net');
+    const isWebviewResource =
+      parsed.protocol === 'vscode-webview-resource:' ||
+      parsed.protocol === 'vscode-resource:' ||
+      parsed.protocol === 'vscode-file:';
 
-    if (!isWebviewBackedFile) {
+    if (!isWebviewCdn && !isWebviewResource) {
       return undefined;
     }
 
+    const fragment = parsed.hash ? decodeUriComponentSafely(parsed.hash.slice(1)) : '';
     return vscode.Uri.file(normalizeLocalFilePath(parsed.pathname)).with({
-      fragment: parsed.hash ? decodeUriComponentSafely(parsed.hash.slice(1)) : '',
+      fragment,
     });
   } catch {
     return undefined;
@@ -155,11 +160,13 @@ function tryResolveLinkedFileUri(documentUri: vscode.Uri, href: string): vscode.
   const pathPart = hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed;
   const fragment = hashIndex >= 0 ? decodeUriComponentSafely(trimmed.slice(hashIndex + 1)) : '';
   const normalizedPath = normalizeLocalFilePath(pathPart.split('?')[0]);
-  const absolutePath = path.isAbsolute(normalizedPath)
-    ? normalizedPath
-    : path.resolve(path.dirname(documentUri.fsPath), normalizedPath);
 
-  return vscode.Uri.file(absolutePath).with({ fragment });
+  if (path.isAbsolute(normalizedPath)) {
+    return vscode.Uri.file(normalizedPath).with({ fragment });
+  }
+
+  const docDirUri = vscode.Uri.joinPath(documentUri, '..');
+  return vscode.Uri.joinPath(docDirUri, normalizedPath).with({ fragment });
 }
 
 async function openLinkedUri(targetUri: vscode.Uri) {
@@ -205,11 +212,11 @@ function safeImageBaseName(fileName?: string): string {
   return normalized || 'image';
 }
 
-async function createUniqueImageFilePath(
-  assetsDir: string,
+async function createUniqueImageFileUri(
+  assetsDirUri: vscode.Uri,
   baseName: string,
   extension: string,
-): Promise<string> {
+): Promise<vscode.Uri> {
   const now = new Date();
   const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
     now.getDate(),
@@ -221,12 +228,12 @@ async function createUniqueImageFilePath(
   for (let index = 0; index < 1000; index += 1) {
     const suffix = index === 0 ? '' : `-${index}`;
     const fileName = `${baseName}-${stamp}${suffix}${extension}`;
-    const candidate = path.join(assetsDir, fileName);
+    const candidateUri = vscode.Uri.joinPath(assetsDirUri, fileName);
 
     try {
-      await fs.access(candidate);
+      await vscode.workspace.fs.stat(candidateUri);
     } catch {
-      return candidate;
+      return candidateUri;
     }
   }
 
@@ -237,22 +244,26 @@ async function saveImageToAssets(
   document: vscode.TextDocument,
   payload: { dataBase64: string; fileName?: string; mimeType?: string },
 ): Promise<string> {
-  const parentDir = path.dirname(document.uri.fsPath);
-  const assetsDir = path.join(parentDir, 'assets');
+  if (document.isUntitled || document.uri.scheme === 'untitled') {
+    throw new Error('Please save the Markdown file first before adding images.');
+  }
 
-  await fs.mkdir(assetsDir, { recursive: true });
+  const parentDirUri = vscode.Uri.joinPath(document.uri, '..');
+  const assetsDirUri = vscode.Uri.joinPath(parentDirUri, 'assets');
+
+  try {
+    await vscode.workspace.fs.createDirectory(assetsDirUri);
+  } catch {
+    // Directory may already exist
+  }
 
   const extension = inferImageExtension(payload.fileName, payload.mimeType);
   const baseName = safeImageBaseName(payload.fileName);
-  const absolutePath = await createUniqueImageFilePath(assetsDir, baseName, extension);
+  const targetFileUri = await createUniqueImageFileUri(assetsDirUri, baseName, extension);
 
   const raw = payload.dataBase64.includes(',')
     ? payload.dataBase64.slice(payload.dataBase64.indexOf(',') + 1)
     : payload.dataBase64;
-
-  if (!/^[\w+/]+=*$/.test(raw)) {
-    throw new Error('Invalid base64 image data.');
-  }
 
   const buffer = Buffer.from(raw, 'base64');
   if (!buffer.length) {
@@ -264,10 +275,10 @@ async function saveImageToAssets(
     throw new Error(`Image exceeds the 10 MB size limit (got ${(buffer.length / 1024 / 1024).toFixed(1)} MB).`);
   }
 
-  await fs.writeFile(absolutePath, buffer);
+  await vscode.workspace.fs.writeFile(targetFileUri, buffer);
 
-  const relative = path.relative(parentDir, absolutePath);
-  return relative.split(path.sep).join('/');
+  const fileName = path.posix.basename(targetFileUri.path);
+  return `assets/${fileName}`;
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -309,11 +320,13 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel,
   ): Promise<void> {
+    const docDirUri = vscode.Uri.joinPath(document.uri, '..');
+
     webviewPanel.webview.options = {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this.context.extensionUri, 'media'),
-        vscode.Uri.file(path.dirname(document.uri.fsPath)),
+        docDirUri,
         ...(vscode.workspace.workspaceFolders?.map((item) => item.uri) ?? []),
       ],
     };
@@ -321,10 +334,12 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, document.uri);
 
     const disposables: vscode.Disposable[] = [];
-    let isApplyingFromWebview = false;
+    let applyingCount = 0;
+    let pendingApplyChain = Promise.resolve();
+    let documentRevision = 0;
 
     const refreshTitle = () => {
-      webviewPanel.title = path.basename(document.uri.fsPath);
+      webviewPanel.title = path.basename(document.uri.fsPath || document.uri.path);
     };
 
     const postDocumentToWebview = (type: 'init' | 'update' = 'update') => {
@@ -332,11 +347,12 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         command: 'update',
         content: document.getText(),
         meta: {
-          fileName: path.basename(document.uri.fsPath),
-          filePath: document.uri.fsPath,
+          fileName: path.basename(document.uri.fsPath || document.uri.path),
+          filePath: document.uri.fsPath || document.uri.path,
           relativePath: getRelativePath(document.uri),
         },
         options: getConfig(),
+        revision: documentRevision,
         theme: getThemeKind(),
         type,
       };
@@ -346,22 +362,35 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     };
 
     const applyContent = async (content: string) => {
-      const normalizedContent = normalizeContentForDocument(content, document);
-      if (normalizedContent === document.getText()) {
-        return;
-      }
+      pendingApplyChain = pendingApplyChain
+        .then(async () => {
+          const normalizedContent = normalizeContentForDocument(content, document);
+          if (normalizedContent === document.getText()) {
+            return;
+          }
 
-      isApplyingFromWebview = true;
+          applyingCount += 1;
+          documentRevision += 1;
 
-      try {
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), normalizedContent);
-        await vscode.workspace.applyEdit(edit);
-      } finally {
-        isApplyingFromWebview = false;
-      }
+          try {
+            const edit = new vscode.WorkspaceEdit();
+            const fullRange = document.validateRange(
+              new vscode.Range(0, 0, Number.MAX_VALUE, Number.MAX_VALUE),
+            );
+            edit.replace(document.uri, fullRange, normalizedContent);
+            await vscode.workspace.applyEdit(edit);
+          } finally {
+            applyingCount = Math.max(0, applyingCount - 1);
+          }
 
-      refreshTitle();
+          refreshTitle();
+        })
+        .catch((err) => {
+          applyingCount = Math.max(0, applyingCount - 1);
+          console.error('[LobeHub Markdown Editor] applyContent error:', err);
+        });
+
+      return pendingApplyChain;
     };
 
     disposables.push(
@@ -370,7 +399,7 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           return;
         }
 
-        if (isApplyingFromWebview) {
+        if (applyingCount > 0) {
           return;
         }
 
@@ -435,16 +464,43 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
               return;
             }
 
-            const linkedFileUri = tryResolveLinkedFileUri(document.uri, href);
-            if (linkedFileUri) {
-              await openLinkedUri(linkedFileUri);
+            // 1. In-page anchor link - handled inside webview
+            if (href.startsWith('#')) {
               return;
             }
 
+            // 2. External web URL (http, https, mailto, tel) -> open in user's default browser
+            if (/^(https?|mailto|tel):/i.test(href)) {
+              try {
+                await vscode.env.openExternal(vscode.Uri.parse(href));
+              } catch (err) {
+                showError(`Failed to open external link: ${href}`);
+              }
+              return;
+            }
+
+            // 3. Local file or webview-backed URI
+            const linkedFileUri = tryResolveLinkedFileUri(document.uri, href);
+            if (linkedFileUri) {
+              try {
+                await openLinkedUri(linkedFileUri);
+              } catch (err) {
+                showError(`Failed to open linked file: ${linkedFileUri.fsPath || linkedFileUri.path}`);
+              }
+              return;
+            }
+
+            // 4. Other URI schemes (e.g. custom protocols) -> try external open first, fallback to vscode.open
             if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/i.test(href) && !isWindowsAbsolutePath(href)) {
-              await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(href), {
-                preview: false,
-              });
+              try {
+                const parsed = vscode.Uri.parse(href);
+                const opened = await vscode.env.openExternal(parsed);
+                if (!opened) {
+                  await vscode.commands.executeCommand('vscode.open', parsed, { preview: false });
+                }
+              } catch {
+                showError(`Cannot open link: ${href}`);
+              }
               return;
             }
 
@@ -520,8 +576,8 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'media', 'dist', 'main.css'),
     );
-    const baseHref =
-      path.dirname(webview.asWebviewUri(vscode.Uri.file(documentUri.fsPath)).toString()) + '/';
+    const docDirUri = vscode.Uri.joinPath(documentUri, '..');
+    const baseHref = webview.asWebviewUri(docDirUri).toString() + '/';
     const nonce = getNonce();
 
     return `<!DOCTYPE html>
