@@ -337,6 +337,7 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     let applyingCount = 0;
     let pendingApplyChain = Promise.resolve();
     let documentRevision = 0;
+    let lastAppliedContent: string | null = null;
 
     const refreshTitle = () => {
       webviewPanel.title = path.basename(document.uri.fsPath || document.uri.path);
@@ -378,7 +379,10 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
               new vscode.Range(0, 0, Number.MAX_VALUE, Number.MAX_VALUE),
             );
             edit.replace(document.uri, fullRange, normalizedContent);
-            await vscode.workspace.applyEdit(edit);
+            const applied = await vscode.workspace.applyEdit(edit);
+            if (applied) {
+              lastAppliedContent = normalizedContent;
+            }
           } finally {
             applyingCount = Math.max(0, applyingCount - 1);
           }
@@ -400,6 +404,10 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
 
         if (applyingCount > 0) {
+          return;
+        }
+
+        if (lastAppliedContent !== null && document.getText() === lastAppliedContent) {
           return;
         }
 

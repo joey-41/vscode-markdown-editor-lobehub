@@ -606,6 +606,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   const hasUserInteractionRef = useRef(false);
   const lastSyncedMarkdownRef = useRef<string>('');
   const pendingRemoteContentRef = useRef<string | null>(null);
+  const editorInitializedRef = useRef(false);
   const tocRafRef = useRef<number | undefined>(undefined);
   const activeTocRafRef = useRef<number | undefined>(undefined);
   const searchRefreshRafRef = useRef<number | undefined>(undefined);
@@ -893,10 +894,13 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     [locale],
   );
 
+  const scheduleTocSyncRef = useRef(scheduleTocSync);
+  scheduleTocSyncRef.current = scheduleTocSync;
+  const scheduleSearchRefreshRef = useRef(scheduleSearchRefresh);
+  scheduleSearchRefreshRef.current = scheduleSearchRefresh;
+
   const setEditorMarkdown = useCallback(
     (markdown: string) => {
-      hasUserInteractionRef.current = false;
-
       if (!readyRef.current) {
         pendingRemoteContentRef.current = markdown;
         return;
@@ -908,15 +912,42 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
         return;
       }
 
+      hasUserInteractionRef.current = false;
       applyingRemoteRef.current = true;
       editor.setDocument('markdown', markdown, { keepId: true });
       applyingRemoteRef.current = false;
 
       lastSyncedMarkdownRef.current = markdown;
-      scheduleTocSync();
-      scheduleSearchRefresh();
+      scheduleTocSyncRef.current();
+      scheduleSearchRefreshRef.current();
     },
-    [editor, scheduleSearchRefresh, scheduleTocSync],
+    [editor],
+  );
+
+  const handleEditorInit = useCallback(
+    (instance: IEditor) => {
+      readyRef.current = true;
+      patchEditorTranslation(instance);
+      const lexicalEditor = instance.getLexicalEditor?.();
+      if (lexicalEditor) {
+        setScrollableTablesActive(lexicalEditor, false);
+      }
+
+      if (!editorInitializedRef.current) {
+        editorInitializedRef.current = true;
+        const pendingContent = pendingRemoteContentRef.current;
+        if (typeof pendingContent === 'string') {
+          applyingRemoteRef.current = true;
+          instance.setDocument('markdown', pendingContent, { keepId: true });
+          applyingRemoteRef.current = false;
+          lastSyncedMarkdownRef.current = pendingContent;
+        }
+      }
+      pendingRemoteContentRef.current = null;
+
+      scheduleTocSync();
+    },
+    [patchEditorTranslation, scheduleTocSync],
   );
 
   const syncToHostImmediate = useCallback(() => {
@@ -1201,6 +1232,10 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       if (currentContent === previousContent) return;
       previousContent = currentContent;
 
+      if (!applyingRemoteRef.current) {
+        hasUserInteractionRef.current = true;
+      }
+
       syncToHost();
       scheduleTocSync();
       scheduleSearchRefresh();
@@ -1227,7 +1262,12 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   useEffect(() => {
     const isEditorTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false;
-      return Boolean(target.closest('.editor-frame'));
+      return Boolean(
+        target.closest('.editor-frame') ||
+          target.closest('.lobe-float-toolbar') ||
+          target.closest('.ant-popover') ||
+          target.closest('.ant-dropdown'),
+      );
     };
 
     const markUserInteraction = (event: Event) => {
@@ -1291,6 +1331,11 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     };
   }, [scheduleActiveTocSync, tocItems.length]);
 
+  const setEditorMarkdownRef = useRef(setEditorMarkdown);
+  setEditorMarkdownRef.current = setEditorMarkdown;
+  const onThemeChangeRef = useRef(onThemeChange);
+  onThemeChangeRef.current = onThemeChange;
+
   useEffect(() => {
     const handleMessage = (event: MessageEvent<HostMessage>) => {
       const message = event.data;
@@ -1299,7 +1344,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       }
 
       if (message.command === 'theme') {
-        onThemeChange(message.theme ?? 'light');
+        onThemeChangeRef.current(message.theme ?? 'light');
         return;
       }
 
@@ -1319,7 +1364,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       }
 
       if (message.command === 'update') {
-        if (message.theme) onThemeChange(message.theme);
+        if (message.theme) onThemeChangeRef.current(message.theme);
         if (message.options?.editorMaxWidth) setEditorMaxWidth(message.options.editorMaxWidth);
         if (typeof message.options?.useVscodeThemeColor === 'boolean') {
           setUseVscodeThemeColor(message.options.useVscodeThemeColor);
@@ -1327,7 +1372,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
 
         if (message.meta?.fileName) setFileName(message.meta.fileName);
         if (typeof message.content === 'string') {
-          setEditorMarkdown(message.content);
+          setEditorMarkdownRef.current(message.content);
         }
       }
     };
@@ -1342,7 +1387,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       });
       uploadResolversRef.current.clear();
     };
-  }, [setEditorMarkdown, onThemeChange, userLanguage]);
+  }, [userLanguage]);
 
   useEffect(() => {
     document.body.dataset.theme = theme;
@@ -1745,24 +1790,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
                   paddingBottom: 72,
                 }}
                 type={'text'}
-                onInit={(instance) => {
-                  readyRef.current = true;
-                  patchEditorTranslation(instance);
-                  const lexicalEditor = instance.getLexicalEditor?.();
-                  if (lexicalEditor) {
-                    setScrollableTablesActive(lexicalEditor, false);
-                  }
-
-                  const pendingContent = pendingRemoteContentRef.current;
-                  if (typeof pendingContent === 'string') {
-                    applyingRemoteRef.current = true;
-                    instance.setDocument('markdown', pendingContent, { keepId: true });
-                    applyingRemoteRef.current = false;
-                    lastSyncedMarkdownRef.current = pendingContent;
-                  }
-
-                  scheduleTocSync();
-                }}
+                onInit={handleEditorInit}
               />
             </div>
           </div>
