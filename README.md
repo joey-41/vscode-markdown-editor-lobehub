@@ -17,8 +17,80 @@
 </p>
 
 <p align="center">
-  <a href="#-中文说明">中文说明</a> | <a href="#-english">English</a>
+  <a href="#-english">English</a> | <a href="#-中文说明">中文说明</a>
 </p>
+
+---
+
+## 🌐 English
+
+### 💡 Overview
+
+**LobeHub Markdown Editor** is a modern, Notion-like WYSIWYG Markdown visual editor designed for VS Code.
+
+Say goodbye to split-pane preview fatigue. LobeHub Markdown Editor brings an elegant, visual, and distraction-free writing experience directly into VS Code, while maintaining native, millisecond-level two-way synchronization with your local Markdown files.
+
+---
+
+### 🛒 Download & Installation
+
+- **Open VSX Registry**: [https://open-vsx.org/extension/joey-41/lobehub-markdown-editor](https://open-vsx.org/extension/joey-41/lobehub-markdown-editor)
+- **In VS Code / Cursor / VSCodium**:
+  Search for `LobeHub Markdown Editor` or `joey-41` in the Extensions marketplace and click **Install**.
+- **Manual VSIX Installation**:
+  Download the latest `.vsix` package from Releases, open the Extensions view in VS Code, click `...` -> select `Install from VSIX...`.
+
+---
+
+### ✨ Key Features
+
+- 🖋️ **Modern WYSIWYG Editing**
+  - **Slash Commands (`/`)**: Type `/` to insert any block element instantly (headings, lists, task lists, quotes, dividers, code blocks, tables, math formulas).
+  - **Floating Bubble Toolbar**: Select text to format (bold, italic, strikethrough, underline, inline code, link, highlight).
+  - **Interactive Rich Tables**: Visual cell selection, row/column operations, and arrow-key navigation without tedious manual alignment.
+
+- 📊 **Interactive Mermaid Diagram Viewer**
+  - Live preview for any code block with language `mermaid` or `mmd`.
+  - **Interactive Zoom & Pan**: Toolbar zoom buttons (20% – 400%), `Ctrl/Cmd + Wheel` smooth zooming, and drag-to-pan support for inspecting complex charts.
+  - **Fullscreen Mode**: Inspect intricate architecture diagrams in an expansive fullscreen overlay (press `Esc` to exit).
+  - **Collapsed by Default**: Code is tucked away by default to prioritize diagrams, while remaining editable on demand.
+
+- ⚡ **Seamless Two-Way Document Sync**
+  - Native integration with VS Code's `CustomTextEditorProvider`.
+  - Full support for `Cmd/Ctrl + S` saving.
+  - Effortlessly toggle between visual editor and plain text editor anytime.
+
+- 📑 **Smart Table of Contents (TOC)**
+  - Auto-generated hierarchical navigation based on heading levels.
+  - Supports expand/collapse and instant jump navigation for long-form writing.
+
+- 🖼️ **Image Paste & Local Management**
+  - Paste images directly from clipboard (`Ctrl/Cmd + V`).
+  - Automatically saves images to your workspace directory and links them via relative paths.
+
+- 🎨 **Adaptive VS Code Theme Integration**
+  - Harmonious integration with VS Code dark, light, and high-contrast color themes.
+
+---
+
+### 🚀 Getting Started
+
+1. Right-click any `.md` or `.markdown` file in the Explorer.
+2. Select **Open With...** -> **LobeHub Markdown Editor**.
+3. (Optional) Select **Configure default editor for '*.md'** to open Markdown files in LobeHub by default.
+
+---
+
+### ⚙️ Settings
+
+Customize in VS Code `settings.json`:
+
+```json
+{
+  "lobehub-markdown-editor.useVscodeThemeColor": true,
+  "lobehub-markdown-editor.editorMaxWidth": 780
+}
+```
 
 ---
 
@@ -95,78 +167,6 @@
   "lobehub-markdown-editor.useVscodeThemeColor": true,
 
   // 编辑器正文区域的最大宽度限制（px），默认 780，支持 560 ~ 1200
-  "lobehub-markdown-editor.editorMaxWidth": 780
-}
-```
-
----
-
-## 🌐 English
-
-### 💡 Overview
-
-**LobeHub Markdown Editor** is a modern, Notion-like WYSIWYG Markdown visual editor designed for VS Code.
-
-Say goodbye to split-pane preview fatigue. LobeHub Markdown Editor brings an elegant, visual, and distraction-free writing experience directly into VS Code, while maintaining native, millisecond-level two-way synchronization with your local Markdown files.
-
----
-
-### 🛒 Download & Installation
-
-- **Open VSX Registry**: [https://open-vsx.org/extension/joey-41/lobehub-markdown-editor](https://open-vsx.org/extension/joey-41/lobehub-markdown-editor)
-- **In VS Code / Cursor / VSCodium**:
-  Search for `LobeHub Markdown Editor` or `joey-41` in the Extensions marketplace and click **Install**.
-- **Manual VSIX Installation**:
-  Download the latest `.vsix` package from Releases, open the Extensions view in VS Code, click `...` -> select `Install from VSIX...`.
-
----
-
-### ✨ Key Features
-
-- 🖋️ **Modern WYSIWYG Editing**
-  - **Slash Commands (`/`)**: Type `/` to insert any block element instantly (headings, lists, task lists, quotes, dividers, code blocks, tables, math formulas).
-  - **Floating Bubble Toolbar**: Select text to format (bold, italic, strikethrough, underline, inline code, link, highlight).
-  - **Interactive Rich Tables**: Visual cell selection, row/column operations, and arrow-key navigation without tedious manual alignment.
-
-- 📊 **Interactive Mermaid Diagram Viewer**
-  - Live preview for any code block with language `mermaid` or `mmd`.
-  - **Interactive Zoom & Pan**: Toolbar zoom buttons (20% – 400%), `Ctrl/Cmd + Wheel` smooth zooming, and drag-to-pan support for inspecting complex charts.
-  - **Fullscreen Mode**: Inspect intricate architecture diagrams in an expansive fullscreen overlay (press `Esc` to exit).
-  - **Collapsed by Default**: Code is tucked away by default to prioritize diagrams, while remaining editable on demand.
-
-- ⚡ **Seamless Two-Way Document Sync**
-  - Native integration with VS Code's `CustomTextEditorProvider`.
-  - Full support for `Cmd/Ctrl + S` saving.
-  - Effortlessly toggle between visual editor and plain text editor anytime.
-
-- 📑 **Smart Table of Contents (TOC)**
-  - Auto-generated hierarchical navigation based on heading levels.
-  - Supports expand/collapse and instant jump navigation for long-form writing.
-
-- 🖼️ **Image Paste & Local Management**
-  - Paste images directly from clipboard (`Ctrl/Cmd + V`).
-  - Automatically saves images to your workspace directory and links them via relative paths.
-
-- 🎨 **Adaptive VS Code Theme Integration**
-  - Harmonious integration with VS Code dark, light, and high-contrast color themes.
-
----
-
-### 🚀 Getting Started
-
-1. Right-click any `.md` or `.markdown` file in the Explorer.
-2. Select **Open With...** -> **LobeHub Markdown Editor**.
-3. (Optional) Select **Configure default editor for '*.md'** to open Markdown files in LobeHub by default.
-
----
-
-### ⚙️ Settings
-
-Customize in VS Code `settings.json`:
-
-```json
-{
-  "lobehub-markdown-editor.useVscodeThemeColor": true,
   "lobehub-markdown-editor.editorMaxWidth": 780
 }
 ```
