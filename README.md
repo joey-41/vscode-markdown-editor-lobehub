@@ -2,7 +2,7 @@
   <img src="./media/logo.png" alt="LobeHub Markdown Editor Logo" width="128" height="128" />
 </p>
 
-# LobeHub Markdown Editor for VS Code
+<h1 align="center">LobeHub Markdown Editor for VS Code</h1>
 
 <p align="center">
   <a href="https://open-vsx.org/extension/joey-41/lobehub-markdown-editor">
