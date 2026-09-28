@@ -28,6 +28,19 @@
         "command": "lobehub-markdown-editor.openEditor",
         "title": "Open with LobeHub Markdown Editor",
         "category": "LobeHub Markdown Editor"
+      },
+      {
+        "command": "lobehub-markdown-editor.copySelection",
+        "title": "Copy Selection",
+        "category": "LobeHub Markdown Editor"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "lobehub-markdown-editor.copySelection",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "activeCustomEditorId == lobehub-markdown-editor.customEditor"
       }
     ],
     "menus": {

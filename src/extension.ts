@@ -4,6 +4,12 @@ import * as vscode from 'vscode';
 const VIEW_TYPE = 'lobehub-markdown-editor.customEditor';
 const CONFIG_NAMESPACE = 'lobehub-markdown-editor';
 
+// Panels for currently open custom editors, keyed by document uri. Used to
+// forward copy requests from the cmd+c keybinding into the active webview,
+// because VS Code intercepts cmd+c in custom editors before it reaches the
+// webview content.
+const activeEditorPanels = new Map<string, vscode.WebviewPanel>();
+
 interface WebviewInitPayload {
   command: 'update';
   type: 'init' | 'update';
@@ -22,13 +28,14 @@ interface WebviewInitPayload {
 }
 
 interface WebviewMessage {
-  command: 'ready' | 'edit' | 'save' | 'open-link' | 'upload-image';
+  command: 'ready' | 'edit' | 'save' | 'open-link' | 'upload-image' | 'copy-clipboard';
   content?: string;
   href?: string;
   requestId?: string;
   fileName?: string;
   mimeType?: string;
   dataBase64?: string;
+  text?: string;
 }
 
 interface UploadImageResultMessage {
@@ -309,6 +316,20 @@ export function activate(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand('vscode.openWith', targetUri, VIEW_TYPE);
     }),
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('lobehub-markdown-editor.copySelection', async () => {
+      const tab = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+      if (!(tab instanceof vscode.TabInputCustom) || tab.viewType !== VIEW_TYPE) {
+        return;
+      }
+
+      const panel = activeEditorPanels.get(tab.uri.toString());
+      if (panel) {
+        await panel.webview.postMessage({ command: 'perform-copy' });
+      }
+    }),
+  );
 }
 
 export function deactivate() {}
@@ -321,6 +342,8 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel: vscode.WebviewPanel,
   ): Promise<void> {
     const docDirUri = vscode.Uri.joinPath(document.uri, '..');
+    const documentUriKey = document.uri.toString();
+    activeEditorPanels.set(documentUriKey, webviewPanel);
 
     webviewPanel.webview.options = {
       enableScripts: true,
@@ -448,6 +471,15 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             postDocumentToWebview('init');
             break;
           }
+          case 'copy-clipboard': {
+            // Webview pages can lose document focus, which makes both
+            // navigator.clipboard.writeText and execCommand('copy') fail.
+            // The extension host always has clipboard access, so bridge there.
+            if (typeof message.text === 'string' && message.text.length > 0) {
+              await vscode.env.clipboard.writeText(message.text);
+            }
+            break;
+          }
           case 'edit': {
             if (typeof message.content === 'string') {
               await applyContent(message.content);
@@ -571,6 +603,9 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     );
 
     webviewPanel.onDidDispose(() => {
+      if (activeEditorPanels.get(documentUriKey) === webviewPanel) {
+        activeEditorPanels.delete(documentUriKey);
+      }
       disposables.forEach((item) => item.dispose());
     });
 

@@ -95,6 +95,9 @@ type HostMessage =
       theme: ThemeType;
     }
   | {
+      command: 'perform-copy';
+    }
+  | {
       command: 'upload-image-result';
       requestId: string;
       ok: boolean;
@@ -353,45 +356,8 @@ const SEARCH_HIGHLIGHT_NAME = 'editor-search-match';
 const SEARCH_HIGHLIGHT_ACTIVE_NAME = 'editor-search-current';
 const SEARCH_MATCH_LIMIT = 1000;
 
-const readSelectedCodeMirrorText = (target: HTMLElement | null) => {
-  const codeMirrorElement = target?.closest(CODEMIRROR_SELECTOR) as
-    | (HTMLElement & { CodeMirror?: { getSelection?: () => string } })
-    | null;
-
-  const nativeSelection = window.getSelection();
-  const nativeText = nativeSelection?.toString() ?? '';
-  // Only trust the window selection when it is anchored inside the code block;
-  // a stale selection elsewhere (e.g. left over in the document body) would
-  // otherwise be copied instead of the selected code.
-  if (nativeText && (!codeMirrorElement || (nativeSelection?.anchorNode && codeMirrorElement.contains(nativeSelection.anchorNode)))) {
-    return nativeText;
-  }
-
-  const codeMirrorInstance = codeMirrorElement?.CodeMirror;
-  const codeMirrorSelection = codeMirrorInstance?.getSelection?.();
-  if (codeMirrorSelection) return codeMirrorSelection;
-
-  const activeElement = document.activeElement;
-  const candidates = [
-    activeElement instanceof HTMLTextAreaElement ? activeElement : null,
-    ...(target ? Array.from(target.closest(CODEMIRROR_SELECTOR)?.querySelectorAll('textarea') ?? []) : []),
-  ];
-
-  for (const textarea of candidates) {
-    if (!(textarea instanceof HTMLTextAreaElement)) continue;
-    const start = textarea.selectionStart ?? 0;
-    const end = textarea.selectionEnd ?? 0;
-    if (end > start) {
-      return textarea.value.slice(start, end);
-    }
-  }
-
-  return null;
-};
-
 const getSearchSeedFromTarget = (target: HTMLElement | null) => {
-  const selectedText = readSelectedCodeMirrorText(target) ?? window.getSelection()?.toString() ?? '';
-  const normalized = selectedText.replace(/\s+/g, ' ').trim();
+  const normalized = collectSelectionText().replace(/\s+/g, ' ').trim();
   if (!normalized || normalized.length > 200) {
     return undefined;
   }
@@ -431,13 +397,46 @@ const copyTextToClipboard = async (text: string) => {
 
 // VS Code webviews frequently keep document.hasFocus() false, which makes
 // navigator.clipboard.writeText reject with NotAllowedError ("Document is not
-// focused") — the code block copy button depends on it. Route writeText
-// through the execCommand fallback whenever the native call rejects.
+// focused") and execCommand('copy') return false — the code block copy button
+// depends on writeText. Fall back to execCommand, then bridge to the extension
+// host, whose vscode.env.clipboard always has system clipboard access.
 if (typeof navigator !== 'undefined' && navigator.clipboard && nativeClipboardWriteText) {
   navigator.clipboard.writeText = (text: string) =>
-    nativeClipboardWriteText(text).catch(() => copyTextToClipboard(text).then(() => undefined));
+    nativeClipboardWriteText(text).catch(async () => {
+      const fallbackOk = await copyTextToClipboard(text);
+      if (!fallbackOk) {
+        try {
+          vscode.postMessage({ command: 'copy-clipboard', text });
+        } catch {
+          // No host bridge available (e.g. standalone preview); nothing else to try.
+        }
+      }
+    });
 }
 
+
+const collectSelectionText = (): string => {
+  const activeElement = document.activeElement;
+  if (activeElement instanceof HTMLTextAreaElement || activeElement instanceof HTMLInputElement) {
+    const start = activeElement.selectionStart ?? 0;
+    const end = activeElement.selectionEnd ?? 0;
+    if (end > start) {
+      return activeElement.value.slice(start, end);
+    }
+  }
+
+  // CodeMirror 6 keeps its selection in editor state and the DOM selection can
+  // be stale or empty inside webviews, so read it from the view when focus is
+  // inside a code block.
+  const cmContent = activeElement instanceof Element ? activeElement.closest('.cm-content') : null;
+  const cmView = (cmContent as (Element & { cmView?: { view?: any } }) | null)?.cmView?.view;
+  if (cmView?.state) {
+    const range = cmView.state.selection.main;
+    return range.empty ? '' : cmView.state.sliceDoc(range.from, range.to);
+  }
+
+  return window.getSelection()?.toString() ?? '';
+};
 
 const escapeSelectorValue = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -1556,6 +1555,17 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
         return;
       }
 
+      if (message.command === 'perform-copy') {
+        // VS Code consumes cmd+c in custom editors before it reaches the
+        // webview; the extension forwards it here. Reply with the selection so
+        // the host can write the system clipboard.
+        const selectedText = collectSelectionText();
+        if (selectedText) {
+          vscode.postMessage({ command: 'copy-clipboard', text: selectedText });
+        }
+        return;
+      }
+
       if (message.command === 'upload-image-result') {
         const resolver = uploadResolversRef.current.get(message.requestId);
         if (!resolver) return;
@@ -1635,6 +1645,29 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
         return;
       }
 
+      if (hasPrimaryModifier && key === 'c' && !event.shiftKey && !event.altKey) {
+        // Bridge the current selection to the extension-host clipboard: the
+        // native copy silently fails when the webview document is not focused.
+        // No preventDefault — the native copy still runs when it can.
+        let selectedText = '';
+        if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
+          const start = target.selectionStart ?? 0;
+          const end = target.selectionEnd ?? 0;
+          if (end > start) {
+            selectedText = target.value.slice(start, end);
+          }
+        } else {
+          selectedText = window.getSelection()?.toString() ?? '';
+        }
+        if (selectedText) {
+          try {
+            vscode.postMessage({ command: 'copy-clipboard', text: selectedText });
+          } catch {
+            // Host bridge unavailable; nothing else to try here.
+          }
+        }
+      }
+
       if (!hasPrimaryModifier) return;
 
       const isSave = key === 's';
@@ -1678,7 +1711,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       const isInCodeMirror = Boolean(target?.closest(CODEMIRROR_SELECTOR));
       if (!isInCodeMirror) return;
 
-      const selectedText = readSelectedCodeMirrorText(target);
+      const selectedText = collectSelectionText();
       if (!selectedText) return;
 
       if (event.clipboardData) {
