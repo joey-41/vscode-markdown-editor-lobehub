@@ -30,6 +30,8 @@ import {
   SELECT_ALL_COMMAND,
   UNDO_COMMAND,
 } from 'lexical';
+import { JSON_SCHEMA, load as loadYaml } from 'js-yaml';
+import { remark } from 'remark';
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -114,6 +116,146 @@ const safeTemplate = (raw: string, params?: Record<string, unknown>) => {
     return value === undefined || value === null ? '' : String(value);
   });
 };
+
+// YAML frontmatter block: opening `---` on the first line, closing `---` before
+// the first blank line. Inner lines must be non-blank so a document that merely
+// starts with a thematic break is not mistaken for frontmatter.
+const FRONTMATTER_PATTERN = /^---[^\S\n]*\r?\n(?:[ \t]*[^\s][^\n]*\r?\n)*?[ \t]*---[^\S\n]*(?:\r?\n|$)/;
+
+interface FrontMatterSplit {
+  body: string;
+  // Verbatim block including delimiters and its trailing line break (if any),
+  // so `frontMatter + body` always reproduces the original document exactly.
+  frontMatter: string | null;
+  frontMatterText: string;
+}
+
+const splitFrontMatter = (markdown: string): FrontMatterSplit => {
+  const match = FRONTMATTER_PATTERN.exec(markdown);
+  if (!match) {
+    return { body: markdown, frontMatter: null, frontMatterText: '' };
+  }
+
+  const frontMatter = match[0];
+  const frontMatterText = frontMatter
+    .replace(/^---[^\S\n]*\r?\n/, '')
+    .replace(/[ \t]*---[^\S\n]*(?:\r?\n)?$/, '');
+
+  return { body: markdown.slice(frontMatter.length), frontMatter, frontMatterText };
+};
+
+const joinFrontMatter = (frontMatter: string | null, body: string): string =>
+  frontMatter ? `${frontMatter}${body}` : body;
+
+const buildFrontMatterBlock = (text: string): string => `---\n${text.replace(/\r?\n+$/, '')}\n---\n`;
+
+// The editor's markdown parser cannot handle raw HTML blocks: an unclosed HTML
+// tag falls through to a raw text node at the document root, which Lexical
+// rejects ("rootNode.splice: Only element or decorator nodes can be inserted
+// to the root node") and the whole document silently fails to open. Convert
+// top-level HTML blocks into fenced code blocks so they stay visible and
+// editable while parsing safely. Documents without HTML are returned
+// byte-for-byte unchanged.
+const sanitizeHtmlBlocksForParser = (markdown: string): string => {
+  if (!markdown.includes('<')) return markdown;
+
+  let tree;
+  try {
+    tree = remark().parse(markdown);
+  } catch {
+    return markdown;
+  }
+
+  const htmlNodes = (tree.children ?? []).filter(
+    (node): node is typeof node & { position: { start: { offset: number }; end: { offset: number } } } =>
+      node.type === 'html' &&
+      node.position?.start?.offset != null &&
+      node.position?.end?.offset != null,
+  );
+  if (htmlNodes.length === 0) return markdown;
+
+  let result = '';
+  let cursor = 0;
+  for (const node of htmlNodes) {
+    const start = node.position.start.offset;
+    const end = node.position.end.offset;
+    if (start < cursor || end > markdown.length) continue;
+
+    result += markdown.slice(cursor, start);
+    const raw = markdown.slice(start, end).replace(/\r/g, '').replace(/\n$/, '');
+    const longestBacktickRun = Math.max(...[...raw.matchAll(/`+/g)].map((match) => match[0].length), 0);
+    const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
+    result += `${fence}html\n${raw}\n${fence}\n`;
+    cursor = end;
+  }
+  result += markdown.slice(cursor);
+  return result;
+};
+
+interface FrontMatterParseResult {
+  data: Record<string, unknown> | null;
+  error: boolean;
+}
+
+const parseFrontMatterData = (text: string): FrontMatterParseResult => {
+  try {
+    const loaded = loadYaml(text, { schema: JSON_SCHEMA });
+    if (loaded && typeof loaded === 'object' && !Array.isArray(loaded) && Object.keys(loaded).length > 0) {
+      return { data: loaded as Record<string, unknown>, error: false };
+    }
+    return { data: null, error: false };
+  } catch {
+    return { data: null, error: true };
+  }
+};
+
+// Renders front matter values the way GitHub does: scalars as text,
+// arrays as bullet lists, nested mappings as nested tables.
+const FrontMatterValue = ({ value }: { value: unknown }) => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    return (
+      <ul className="editor-frontmatter-list">
+        {value.map((item, index) => (
+          <li key={index}>
+            <FrontMatterValue value={item} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (typeof value === 'object') {
+    return <FrontMatterTable data={value as Record<string, unknown>} nested />;
+  }
+
+  return <span className="editor-frontmatter-text">{String(value)}</span>;
+};
+
+const FrontMatterTable = ({
+  data,
+  nested = false,
+}: {
+  data: Record<string, unknown>;
+  nested?: boolean;
+}) => (
+  <table className={`editor-frontmatter-table${nested ? ' editor-frontmatter-table--nested' : ''}`}>
+    <tbody>
+      {Object.entries(data).map(([key, value]) => (
+        <tr key={key}>
+          <th scope="row">{key}</th>
+          <td>
+            <FrontMatterValue value={value} />
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
 
 const fileToBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -584,6 +726,8 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   const [fileName, setFileName] = useState<string>('Untitled.md');
   const [editorMaxWidth, setEditorMaxWidth] = useState<number>(780);
   const [useVscodeThemeColor, setUseVscodeThemeColor] = useState<boolean>(true);
+  const [frontMatterText, setFrontMatterText] = useState<string | null>(null);
+  const [frontMatterRawMode, setFrontMatterRawMode] = useState(false);
   const [tocItems, setTocItems] = useState<TocItem[]>([]);
   const [tocCollapsed, setTocCollapsed] = useState<boolean>(true);
   const [viewportWidth, setViewportWidth] = useState<number>(() => window.innerWidth);
@@ -601,11 +745,18 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     return stripped || name;
   }, [fileName]);
 
+  const frontMatterParsed = useMemo(
+    () => (frontMatterText === null ? null : parseFrontMatterData(frontMatterText)),
+    [frontMatterText],
+  );
+
   const readyRef = useRef(false);
   const applyingRemoteRef = useRef(false);
   const hasUserInteractionRef = useRef(false);
   const lastSyncedMarkdownRef = useRef<string>('');
   const pendingRemoteContentRef = useRef<string | null>(null);
+  const frontMatterRef = useRef<string | null>(null);
+  const frontMatterTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const editorInitializedRef = useRef(false);
   const tocRafRef = useRef<number | undefined>(undefined);
   const activeTocRafRef = useRef<number | undefined>(undefined);
@@ -899,25 +1050,36 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
   const scheduleSearchRefreshRef = useRef(scheduleSearchRefresh);
   scheduleSearchRefreshRef.current = scheduleSearchRefresh;
 
+  const getFullMarkdown = useCallback(
+    () => joinFrontMatter(frontMatterRef.current, String(editor.getDocument('markdown') ?? '')),
+    [editor],
+  );
+
   const setEditorMarkdown = useCallback(
     (markdown: string) => {
+      const split = splitFrontMatter(markdown);
+      const body = sanitizeHtmlBlocksForParser(split.body);
+      frontMatterRef.current = split.frontMatter;
+      const nextFrontMatterText = split.frontMatter !== null ? split.frontMatterText : null;
+      setFrontMatterText((previous) => (previous === nextFrontMatterText ? previous : nextFrontMatterText));
+
       if (!readyRef.current) {
-        pendingRemoteContentRef.current = markdown;
+        pendingRemoteContentRef.current = body;
         return;
       }
 
       const currentMarkdown = String(editor.getDocument('markdown') ?? '');
-      if (currentMarkdown === markdown) {
-        lastSyncedMarkdownRef.current = markdown;
+      if (currentMarkdown === body) {
+        lastSyncedMarkdownRef.current = joinFrontMatter(split.frontMatter, body);
         return;
       }
 
       hasUserInteractionRef.current = false;
       applyingRemoteRef.current = true;
-      editor.setDocument('markdown', markdown, { keepId: true });
+      editor.setDocument('markdown', body, { keepId: true });
       applyingRemoteRef.current = false;
 
-      lastSyncedMarkdownRef.current = markdown;
+      lastSyncedMarkdownRef.current = joinFrontMatter(split.frontMatter, body);
       scheduleTocSyncRef.current();
       scheduleSearchRefreshRef.current();
     },
@@ -940,8 +1102,11 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
           applyingRemoteRef.current = true;
           instance.setDocument('markdown', pendingContent, { keepId: true });
           applyingRemoteRef.current = false;
-          lastSyncedMarkdownRef.current = pendingContent;
         }
+        lastSyncedMarkdownRef.current = joinFrontMatter(
+          frontMatterRef.current,
+          String(instance.getDocument('markdown') ?? ''),
+        );
       }
       pendingRemoteContentRef.current = null;
 
@@ -964,7 +1129,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       return;
     }
 
-    const markdown = String(editor.getDocument('markdown') ?? '');
+    const markdown = getFullMarkdown();
     if (markdown === lastSyncedMarkdownRef.current) {
       return;
     }
@@ -975,7 +1140,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       command: 'edit',
       content: markdown,
     });
-  }, [editor]);
+  }, [getFullMarkdown]);
 
   const syncToHost = useCallback(() => {
     if (applyingRemoteRef.current || !hasUserInteractionRef.current) {
@@ -998,14 +1163,32 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       syncTimerRef.current = undefined;
     }
 
-    const markdown = String(editor.getDocument('markdown') ?? '');
+    const markdown = getFullMarkdown();
     lastSyncedMarkdownRef.current = markdown;
 
     vscode.postMessage({
       command: 'save',
       content: markdown,
     });
-  }, [editor]);
+  }, [getFullMarkdown]);
+
+  const handleFrontMatterChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      frontMatterRef.current = value.trim() ? buildFrontMatterBlock(value) : null;
+      setFrontMatterText(value);
+      hasUserInteractionRef.current = true;
+      syncToHost();
+    },
+    [syncToHost],
+  );
+
+  useEffect(() => {
+    const textarea = frontMatterTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [frontMatterText]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<{ url: string }> => {
     const requestId = createRequestId();
@@ -1232,10 +1415,10 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
       if (currentContent === previousContent) return;
       previousContent = currentContent;
 
-      if (!applyingRemoteRef.current) {
-        hasUserInteractionRef.current = true;
-      }
-
+      // Only genuine DOM events mark user interaction (see markUserInteraction).
+      // Programmatic updates from editor plugins (e.g. queueMicrotask fixes that
+      // run after the initial content load) must never sync back to the host,
+      // otherwise a freshly opened file would be marked as modified.
       syncToHost();
       scheduleTocSync();
       scheduleSearchRefresh();
@@ -1567,6 +1750,7 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     (event: React.MouseEvent<HTMLElement>) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest('.editor-doc-head')) return;
+      if (target?.closest('.editor-frontmatter')) return;
       if (target?.closest('.editor-toc')) return;
       if (target?.closest('.editor-toc-toggle')) return;
       if (target?.closest('.editor-toc-hotspot')) return;
@@ -1760,6 +1944,57 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
                   {titleText}
                 </h1>
               </div>
+              {frontMatterText !== null &&
+                (() => {
+                  const isZh = userLanguage.startsWith('zh');
+                  const parseError = frontMatterParsed?.error ?? false;
+                  const tableData = parseError ? null : frontMatterParsed?.data ?? null;
+                  const showRaw = frontMatterRawMode || tableData === null;
+
+                  return (
+                    <div
+                      className="editor-frontmatter"
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
+                      <div className="editor-frontmatter-head">
+                        <span className={`editor-frontmatter-badge${parseError ? ' is-error' : ''}`}>YAML</span>
+                        <span className="editor-frontmatter-label">
+                          {parseError
+                            ? isZh
+                              ? 'YAML 解析失败，请修正格式'
+                              : 'Invalid YAML, please fix the format'
+                            : isZh
+                              ? 'Frontmatter 元数据'
+                              : 'Frontmatter metadata'}
+                        </span>
+                        <button
+                          aria-pressed={showRaw}
+                          className="editor-frontmatter-toggle"
+                          type="button"
+                          onClick={() => setFrontMatterRawMode((previous) => !previous)}
+                        >
+                          {showRaw ? (isZh ? '预览' : 'Preview') : isZh ? '编辑' : 'Edit'}
+                        </button>
+                      </div>
+                      {showRaw ? (
+                        <textarea
+                          ref={frontMatterTextareaRef}
+                          aria-label="YAML frontmatter"
+                          className="editor-frontmatter-code"
+                          rows={1}
+                          spellCheck={false}
+                          value={frontMatterText}
+                          onChange={handleFrontMatterChange}
+                        />
+                      ) : (
+                        <div className="editor-frontmatter-body">
+                          <FrontMatterTable data={tableData!} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               <Editor
                 autoFocus
                 content={pendingRemoteContentRef.current ?? ''}

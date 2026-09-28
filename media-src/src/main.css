@@ -462,6 +462,124 @@ body {
   object-fit: contain;
 }
 
+.editor-frontmatter {
+  margin: 14px 56px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.editor-frontmatter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  user-select: none;
+}
+
+.editor-frontmatter-badge {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  line-height: 1.5;
+  color: var(--primary);
+}
+
+.editor-frontmatter-badge.is-error {
+  color: var(--vscode-errorForeground, #f48771);
+  border-color: var(--vscode-errorForeground, #f48771);
+}
+
+.editor-frontmatter-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.editor-frontmatter-toggle {
+  margin-inline-start: auto;
+  padding: 1px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.editor-frontmatter-toggle:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.editor-frontmatter-body {
+  padding: 8px 10px;
+}
+
+/* GitHub-style key/value table for parsed front matter */
+.editor-frontmatter-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.editor-frontmatter-table th,
+.editor-frontmatter-table td {
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  text-align: left;
+  vertical-align: top;
+  user-select: text;
+}
+
+.editor-frontmatter-table th {
+  font-weight: 600;
+  white-space: nowrap;
+  word-break: break-word;
+}
+
+.editor-frontmatter-table td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.editor-frontmatter-table--nested {
+  margin: 2px 0;
+}
+
+.editor-frontmatter-list {
+  margin: 0;
+  padding-inline-start: 18px;
+}
+
+.editor-frontmatter-text {
+  white-space: pre-wrap;
+}
+
+.editor-frontmatter-code {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
 .editor-frame [data-lexical-editor='true'] {
   min-height: calc(100vh - 180px);
   padding: 24px 56px 70px;
@@ -806,6 +924,10 @@ body[data-theme='dark'] .editor-frame .editor_table_cell_selected {
 
   .editor-doc-head {
     padding: 14px 20px 0;
+  }
+
+  .editor-frontmatter {
+    margin: 12px 20px 0;
   }
 
   .editor-frame [data-lexical-editor='true'] {
