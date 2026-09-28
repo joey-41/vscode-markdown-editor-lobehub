@@ -1188,7 +1188,9 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
     if (!textarea) return;
     textarea.style.height = 'auto';
     textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [frontMatterText]);
+    // Also re-run when toggling between preview/edit: the textarea remounts
+    // while frontMatterText stays the same, so it alone would not retrigger.
+  }, [frontMatterText, frontMatterRawMode]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<{ url: string }> => {
     const requestId = createRequestId();
@@ -1959,15 +1961,11 @@ const EditorApp = ({ theme, onThemeChange }: EditorAppProps) => {
                     >
                       <div className="editor-frontmatter-head">
                         <span className={`editor-frontmatter-badge${parseError ? ' is-error' : ''}`}>YAML</span>
-                        <span className="editor-frontmatter-label">
-                          {parseError
-                            ? isZh
-                              ? 'YAML 解析失败，请修正格式'
-                              : 'Invalid YAML, please fix the format'
-                            : isZh
-                              ? 'Frontmatter 元数据'
-                              : 'Frontmatter metadata'}
-                        </span>
+                        {parseError && (
+                          <span className="editor-frontmatter-label editor-frontmatter-label--error">
+                            {isZh ? 'YAML 解析失败，请修正格式' : 'Invalid YAML, please fix the format'}
+                          </span>
+                        )}
                         <button
                           aria-pressed={showRaw}
                           className="editor-frontmatter-toggle"

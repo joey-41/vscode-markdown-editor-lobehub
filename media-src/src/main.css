@@ -501,6 +501,10 @@ body {
   color: var(--text-secondary);
 }
 
+.editor-frontmatter-label--error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
 .editor-frontmatter-toggle {
   margin-inline-start: auto;
   padding: 1px 10px;
