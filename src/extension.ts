@@ -4,10 +4,8 @@ import * as vscode from 'vscode';
 const VIEW_TYPE = 'lobehub-markdown-editor.customEditor';
 const CONFIG_NAMESPACE = 'lobehub-markdown-editor';
 
-// Panels for currently open custom editors, keyed by document uri. Used to
-// forward copy requests from the cmd+c keybinding into the active webview,
-// because VS Code intercepts cmd+c in custom editors before it reaches the
-// webview content.
+// Panels used by the explicit Copy Selection command. Keyboard and context
+// menu copying use VS Code's native webview routing.
 const activeEditorPanels = new Map<string, vscode.WebviewPanel>();
 
 interface WebviewInitPayload {
@@ -325,7 +323,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const panel = activeEditorPanels.get(tab.uri.toString());
-      if (panel) {
+      if (panel?.active) {
         await panel.webview.postMessage({ command: 'perform-copy' });
       }
     }),
@@ -472,11 +470,18 @@ class LobeHubMarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           }
           case 'copy-clipboard': {
-            // Webview pages can lose document focus, which makes both
-            // navigator.clipboard.writeText and execCommand('copy') fail.
-            // The extension host always has clipboard access, so bridge there.
-            if (typeof message.text === 'string' && message.text.length > 0) {
+            if (typeof message.text !== 'string' || typeof message.requestId !== 'string') break;
+            try {
               await vscode.env.clipboard.writeText(message.text);
+              await webviewPanel.webview.postMessage({
+                command: 'copy-clipboard-result', requestId: message.requestId, ok: true,
+              });
+            } catch (error) {
+              const detail = error instanceof Error ? error.message : String(error);
+              await webviewPanel.webview.postMessage({
+                command: 'copy-clipboard-result', requestId: message.requestId, ok: false, error: detail,
+              });
+              showError(`Copy failed: ${detail}`);
             }
             break;
           }
