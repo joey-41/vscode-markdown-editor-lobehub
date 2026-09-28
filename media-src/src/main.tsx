@@ -354,12 +354,19 @@ const SEARCH_HIGHLIGHT_ACTIVE_NAME = 'editor-search-current';
 const SEARCH_MATCH_LIMIT = 1000;
 
 const readSelectedCodeMirrorText = (target: HTMLElement | null) => {
-  const nativeSelection = window.getSelection()?.toString();
-  if (nativeSelection) return nativeSelection;
-
   const codeMirrorElement = target?.closest(CODEMIRROR_SELECTOR) as
     | (HTMLElement & { CodeMirror?: { getSelection?: () => string } })
     | null;
+
+  const nativeSelection = window.getSelection();
+  const nativeText = nativeSelection?.toString() ?? '';
+  // Only trust the window selection when it is anchored inside the code block;
+  // a stale selection elsewhere (e.g. left over in the document body) would
+  // otherwise be copied instead of the selected code.
+  if (nativeText && (!codeMirrorElement || (nativeSelection?.anchorNode && codeMirrorElement.contains(nativeSelection.anchorNode)))) {
+    return nativeText;
+  }
+
   const codeMirrorInstance = codeMirrorElement?.CodeMirror;
   const codeMirrorSelection = codeMirrorInstance?.getSelection?.();
   if (codeMirrorSelection) return codeMirrorSelection;
@@ -392,28 +399,44 @@ const getSearchSeedFromTarget = (target: HTMLElement | null) => {
   return normalized;
 };
 
-const copyTextToClipboard = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', 'true');
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    textarea.style.pointerEvents = 'none';
-    textarea.style.inset = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
+const nativeClipboardWriteText =
+  typeof navigator !== 'undefined' ? navigator.clipboard?.writeText?.bind(navigator.clipboard) : undefined;
 
+const copyTextToClipboard = async (text: string) => {
+  if (nativeClipboardWriteText) {
     try {
-      return document.execCommand('copy');
-    } finally {
-      textarea.remove();
+      await nativeClipboardWriteText(text);
+      return true;
+    } catch {
+      // Fall through to the textarea fallback below.
     }
   }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  textarea.style.inset = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    return document.execCommand('copy');
+  } finally {
+    textarea.remove();
+  }
 };
+
+// VS Code webviews frequently keep document.hasFocus() false, which makes
+// navigator.clipboard.writeText reject with NotAllowedError ("Document is not
+// focused") — the code block copy button depends on it. Route writeText
+// through the execCommand fallback whenever the native call rejects.
+if (typeof navigator !== 'undefined' && navigator.clipboard && nativeClipboardWriteText) {
+  navigator.clipboard.writeText = (text: string) =>
+    nativeClipboardWriteText(text).catch(() => copyTextToClipboard(text).then(() => undefined));
+}
 
 
 const escapeSelectorValue = (value: string) => {
